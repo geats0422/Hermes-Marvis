@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Hermes 赛博宫廷办公室 — 全局样式
+   ============================================================ */
+
+@theme {
+  --color-ink: #0a0a0f;
+  --color-cyan: #00f0ff;
+  --color-vermilion: #ff2a6d;
+  --color-gold: #ffd700;
+  --color-wood: #8B4513;
+  --color-sleep: #39ff14;
+  --color-text-main: #e0e0e0;
+  --color-text-muted: #9ca3af;
+  --color-panel-bg: rgba(10, 10, 15, 0.85);
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-ink);
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  color: var(--color-text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 星空背景动画（CSS only，性能友好） */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@keyframes meteor {
+  0% { transform: translateX(-100px) translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(100vw) translateY(100px); opacity: 0; }
+}
+
+@keyframes pillarFlow {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 0% 200%; }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes stampDrop {
+  0% { transform: translateY(-50px) scale(1.2); opacity: 1; }
+  60% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 0; }
+}
+
+/* 竹简纹理 */
+.bamboo-texture {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(139, 69, 19, 0.15) 0px,
+    rgba(139, 69, 19, 0.15) 2px,
+    transparent 2px,
+    transparent 24px
+  ),
+  linear-gradient(180deg, rgba(10, 10, 15, 0.95) 0%, rgba(20, 15, 10, 0.95) 100%);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(10, 10, 15, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.5);
+}
