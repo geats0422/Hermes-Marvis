@@ -1,135 +1,129 @@
 /** ============================================================
  *  SkillsPage — 技能库页面
- *  展示 Hermes Agent 的全部本地技能（从 Agent.skills 提取）
- *  赛博宫廷风格
+ *  实时同步 Hermes Agent 的技能和工具集
  *  ============================================================ */
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Plus, Check, SlidersHorizontal, Sparkles,
-  Compass, Eye, Shield, Brain,
-  UserPlus, Key, RefreshCw, ClipboardList,
-  Coins, Wallet, TrendingDown, FileText,
-  MessageCircle, Globe, Heart, LayoutTemplate,
-  ShieldCheck, Filter, Gauge, Radar,
-  Search as SearchIcon, Lock, FileCheck, Trash2,
-  Code, Package, TestTube, BookOpen,
-  Database, BookMarked, HardDrive, Archive,
-  Plug, Webhook, Send, Route,
+  Search, Plus, Check, Sparkles,
+  Wrench, Globe, Image as ImageIcon, Code, Music,
+  Gamepad2, Home, BookOpen, Shield, Cpu, Terminal,
+  Database, MessageCircle, Network, Zap, Filter,
+  RefreshCw, Wifi, WifiOff, Layers,
 } from 'lucide-react';
-import { agents } from '../data';
+import { getSkills, getToolsets } from '../api/hermes';
+import type { HermesSkill, HermesToolset } from '../types/hermes';
 
-const iconMap: Record<string, React.ElementType> = {
-  compass: Compass,
-  eye: Eye,
-  shield: Shield,
-  brain: Brain,
-  'user-plus': UserPlus,
-  key: Key,
-  'refresh-cw': RefreshCw,
-  'clipboard-list': ClipboardList,
-  coins: Coins,
-  wallet: Wallet,
-  'trending-down': TrendingDown,
-  'file-text': FileText,
-  'message-circle': MessageCircle,
-  globe: Globe,
-  heart: Heart,
-  'layout-template': LayoutTemplate,
-  'shield-check': ShieldCheck,
-  filter: Filter,
-  gauge: Gauge,
-  radar: Radar,
-  search: SearchIcon,
-  lock: Lock,
-  'file-check': FileCheck,
-  'trash-2': Trash2,
-  code: Code,
-  package: Package,
-  'test-tube': TestTube,
-  'book-open': BookOpen,
-  database: Database,
-  'book-marked': BookMarked,
-  'hard-drive': HardDrive,
-  archive: Archive,
-  plug: Plug,
-  webhook: Webhook,
-  send: Send,
-  route: Route,
+type ViewMode = 'skills' | 'toolsets';
+
+const categoryIcons: Record<string, React.ElementType> = {
+  'autonomous-ai-agents': Cpu,
+  'creative': ImageIcon,
+  'data-science': Database,
+  'devops': Terminal,
+  'email': MessageCircle,
+  'gaming': Gamepad2,
+  'github': Code,
+  'mcp': Network,
+  'media': Music,
+  'mlops': Cpu,
+  'note-taking': BookOpen,
+  'productivity': Zap,
+  'red-teaming': Shield,
+  'research': BookOpen,
+  'smart-home': Home,
+  'social-media': Globe,
+  'software-development': Code,
 };
 
-interface SkillItem {
-  id: string;
-  title: string;
-  desc: string;
-  icon: string;
-  source: string;        // 部门
-  sourceFull: string;    // Agent 名称
-  category: string;
-  color: string;
-  added: boolean;
-}
-
-const departmentColor: Record<string, string> = {
-  首辅: '#ffd700',
-  吏: '#00f0ff',
-  户: '#ffd700',
-  礼: '#39ff14',
-  兵: '#00f0ff',
-  刑: '#ff2a6d',
-  工: '#ffd700',
-  仓: '#00f0ff',
-  驿: '#00f0ff',
+const categoryColors: Record<string, string> = {
+  'autonomous-ai-agents': '#00f0ff',
+  'creative': '#ff2a6d',
+  'data-science': '#39ff14',
+  'devops': '#ffd700',
+  'email': '#00f0ff',
+  'gaming': '#ff2a6d',
+  'github': '#e0e0e0',
+  'mcp': '#ffd700',
+  'media': '#ff2a6d',
+  'mlops': '#39ff14',
+  'note-taking': '#7c3aed',
+  'productivity': '#00f0ff',
+  'red-teaming': '#ff2a6d',
+  'research': '#ffd700',
+  'smart-home': '#39ff14',
+  'social-media': '#00f0ff',
+  'software-development': '#ffd700',
 };
 
-const categoryMap: Record<string, string> = {
-  首辅: '调度管理',
-  吏: '人事管理',
-  户: '资源管理',
-  礼: '对话交互',
-  兵: '安全防御',
-  刑: '合规治理',
-  工: '工程开发',
-  仓: '数据存储',
-  驿: '通信集成',
+const categoryLabels: Record<string, string> = {
+  'autonomous-ai-agents': 'AI Agent',
+  'creative': '创意',
+  'data-science': '数据科学',
+  'devops': 'DevOps',
+  'email': '邮件',
+  'gaming': '游戏',
+  'github': 'GitHub',
+  'mcp': 'MCP',
+  'media': '媒体',
+  'mlops': 'MLOps',
+  'note-taking': '笔记',
+  'productivity': '生产力',
+  'red-teaming': '安全测试',
+  'research': '研究',
+  'smart-home': '智能家居',
+  'social-media': '社交媒体',
+  'software-development': '软件开发',
 };
-
-const categoryOrder = ['全部', '调度管理', '人事管理', '资源管理', '对话交互', '安全防御', '合规治理', '工程开发', '数据存储', '通信集成'];
-
-/* ── 展开所有技能（带随机"添加人数"模拟） ── */
-function buildSkillList(): SkillItem[] {
-  const list: SkillItem[] = [];
-  agents.forEach((agent) => {
-    agent.skills.forEach((skill, idx) => {
-      list.push({
-        id: `${agent.id}-${idx}`,
-        title: skill.name,
-        desc: skill.description,
-        icon: skill.icon,
-        source: agent.department,
-        sourceFull: `${agent.name}`,
-        category: categoryMap[agent.department] || '其他',
-        color: departmentColor[agent.department] || '#00f0ff',
-        added: false,
-      });
-    });
-  });
-  return list;
-}
 
 export default function SkillsPage() {
+  const [viewMode, setViewMode] = useState<ViewMode>('skills');
+  const [skills, setSkills] = useState<HermesSkill[]>([]);
+  const [toolsets, setToolsets] = useState<HermesToolset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [searchQuery, setSearchQuery] = useState('');
-  const [skills, setSkills] = useState<SkillItem[]>(buildSkillList());
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const handleToggleAdd = (id: string) => {
-    setSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, added: !s.added } : s))
-    );
-  };
+  const fetchData = useCallback(async () => {
+    try {
+      const [skillsResult, toolsetsResult] = await Promise.allSettled([
+        getSkills(),
+        getToolsets(),
+      ]);
+      if (skillsResult.status === 'fulfilled') setSkills(skillsResult.value);
+      if (toolsetsResult.status === 'fulfilled') setToolsets(toolsetsResult.value);
+      if (skillsResult.status === 'rejected' && toolsetsResult.status === 'rejected') {
+        setError(true);
+      } else {
+        setError(false);
+        setLastRefresh(new Date());
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 60000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  /* 提取所有分类 */
+  const skillCategories = useMemo(() => {
+    const cats = new Set<string>();
+    skills.forEach((s) => s.category && cats.add(s.category));
+    return ['全部', ...Array.from(cats).sort()];
+  }, [skills]);
+
+  /* 过滤技能 */
+  const filteredSkills = useMemo(() => {
     let result = skills;
     if (activeCategory !== '全部') {
       result = result.filter((s) => s.category === activeCategory);
@@ -137,63 +131,128 @@ export default function SkillsPage() {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
-        (s) => s.title.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q)
+        (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
       );
     }
     return result;
   }, [skills, activeCategory, searchQuery]);
 
-  const addedCount = skills.filter((s) => s.added).length;
+  /* 过滤工具集 */
+  const filteredToolsets = useMemo(() => {
+    let result = toolsets;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (t) => t.name.toLowerCase().includes(q) || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [toolsets, searchQuery]);
+
+  const handleToggleAdd = (id: string) => {
+    setAdded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full" style={{ color: '#666' }}>
+        <RefreshCw size={24} className="animate-spin" />
+        <p className="text-sm mt-3">加载技能库…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ── 顶部标题区 ── */}
+      {/* 顶部标题区 */}
       <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs tracking-wider" style={{ color: '#666' }}>
-            探索发现
-          </span>
+          <span className="text-xs tracking-wider" style={{ color: '#666' }}>探索发现</span>
           <span style={{ color: '#444' }}>·</span>
-          <h1 className="text-base font-bold tracking-wider" style={{ color: '#e0e0e0' }}>
-            技能库
-          </h1>
+          <h1 className="text-base font-bold tracking-wider" style={{ color: '#e0e0e0' }}>技能库</h1>
         </div>
-        <div className="text-[10px]" style={{ color: '#666' }}>
-          本地部署 · {skills.length} 个技能
+        <div className="flex items-center gap-3">
+          {lastRefresh && !error && (
+            <span className="text-[10px] flex items-center gap-1" style={{ color: '#666' }}>
+              <Wifi size={10} color="#00f0ff" />
+              更新于 {lastRefresh.toLocaleTimeString('zh-CN')}
+            </span>
+          )}
+          {error && (
+            <span className="text-[10px] flex items-center gap-1" style={{ color: '#ff2a6d' }}>
+              <WifiOff size={10} />
+              同步失败
+            </span>
+          )}
+          <div className="text-[10px]" style={{ color: '#666' }}>
+            Hermes 实时同步 · {skills.length} 技能 / {toolsets.length} 工具集
+          </div>
         </div>
       </div>
 
-      {/* ── 分类标签 + 工具栏 ── */}
+      {/* 视图切换 + 分类 + 工具栏 */}
       <div className="flex items-center justify-between px-6 pb-3 flex-shrink-0 flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {categoryOrder.map((cat) => (
-            <motion.button
-              key={cat}
-              className="px-3 py-1 rounded-full text-[10px] whitespace-nowrap transition-colors"
+        <div className="flex items-center gap-2">
+          {/* 视图切换 */}
+          <div className="flex items-center rounded-md p-0.5" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.1)' }}>
+            <button
+              className="px-2.5 py-1 rounded text-[10px] transition-colors flex items-center gap-1"
               style={{
-                background: activeCategory === cat ? 'rgba(0,240,255,0.1)' : 'rgba(0,0,0,0.3)',
-                border: `1px solid ${activeCategory === cat ? 'rgba(0,240,255,0.3)' : 'rgba(0,240,255,0.08)'}`,
-                color: activeCategory === cat ? '#00f0ff' : '#9ca3af',
-                fontWeight: activeCategory === cat ? 700 : 400,
+                background: viewMode === 'skills' ? 'rgba(0,240,255,0.15)' : 'transparent',
+                color: viewMode === 'skills' ? '#00f0ff' : '#9ca3af',
+                fontWeight: viewMode === 'skills' ? 700 : 400,
               }}
-              whileHover={{
-                background: activeCategory === cat ? 'rgba(0,240,255,0.15)' : 'rgba(0,0,0,0.4)',
-              }}
-              onClick={() => setActiveCategory(cat)}
+              onClick={() => { setViewMode('skills'); setActiveCategory('全部'); }}
             >
-              {cat}
-            </motion.button>
-          ))}
+              <Sparkles size={10} /> 技能
+            </button>
+            <button
+              className="px-2.5 py-1 rounded text-[10px] transition-colors flex items-center gap-1"
+              style={{
+                background: viewMode === 'toolsets' ? 'rgba(0,240,255,0.15)' : 'transparent',
+                color: viewMode === 'toolsets' ? '#00f0ff' : '#9ca3af',
+                fontWeight: viewMode === 'toolsets' ? 700 : 400,
+              }}
+              onClick={() => setViewMode('toolsets')}
+            >
+              <Layers size={10} /> 工具集
+            </button>
+          </div>
+
+          {/* 分类标签 */}
+          {viewMode === 'skills' && (
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {skillCategories.map((cat) => (
+                <motion.button
+                  key={cat}
+                  className="px-2.5 py-1 rounded-full text-[10px] whitespace-nowrap transition-colors"
+                  style={{
+                    background: activeCategory === cat ? 'rgba(0,240,255,0.1)' : 'rgba(0,0,0,0.3)',
+                    border: `1px solid ${activeCategory === cat ? 'rgba(0,240,255,0.3)' : 'rgba(0,240,255,0.08)'}`,
+                    color: activeCategory === cat ? '#00f0ff' : '#9ca3af',
+                    fontWeight: activeCategory === cat ? 700 : 400,
+                  }}
+                  whileHover={{
+                    background: activeCategory === cat ? 'rgba(0,240,255,0.15)' : 'rgba(0,0,0,0.4)',
+                  }}
+                  onClick={() => setActiveCategory(cat)}
+                >
+                  {cat === '全部' ? cat : (categoryLabels[cat] || cat)}
+                </motion.button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* 搜索框 */}
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
-            style={{
-              background: 'rgba(0,0,0,0.4)',
-              border: '1px solid rgba(0,240,255,0.1)',
-            }}
+            style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.1)' }}
           >
             <Search size={11} color="#666" />
             <input
@@ -206,147 +265,238 @@ export default function SkillsPage() {
             />
           </div>
 
-          {/* 排序 */}
           <motion.button
             className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px]"
             style={{
-              background: 'rgba(0,0,0,0.4)',
-              border: '1px solid rgba(0,240,255,0.1)',
-              color: '#9ca3af',
-            }}
-            whileHover={{ background: 'rgba(0,0,0,0.6)' }}
-          >
-            <SlidersHorizontal size={10} />
-            <span>本地</span>
-          </motion.button>
-
-          {/* 我的技能 */}
-          <motion.button
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px]"
-            style={{
-              background: addedCount > 0 ? 'rgba(255,215,0,0.1)' : 'rgba(0,0,0,0.4)',
-              border: `1px solid ${addedCount > 0 ? 'rgba(255,215,0,0.3)' : 'rgba(0,240,255,0.1)'}`,
-              color: addedCount > 0 ? '#ffd700' : '#9ca3af',
+              background: added.size > 0 ? 'rgba(255,215,0,0.1)' : 'rgba(0,0,0,0.4)',
+              border: `1px solid ${added.size > 0 ? 'rgba(255,215,0,0.3)' : 'rgba(0,240,255,0.1)'}`,
+              color: added.size > 0 ? '#ffd700' : '#9ca3af',
             }}
             whileHover={{ background: 'rgba(0,0,0,0.6)' }}
           >
             <Sparkles size={10} />
-            <span>我的技能 {addedCount > 0 && `(${addedCount})`}</span>
+            <span>已启用 {added.size > 0 && `(${added.size})`}</span>
+          </motion.button>
+
+          <motion.button
+            className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+            style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }}
+            whileHover={{ background: 'rgba(0,240,255,0.15)' }}
+            onClick={fetchData}
+          >
+            <RefreshCw size={10} />
+            刷新
           </motion.button>
         </div>
       </div>
 
-      {/* ── 技能卡片网格 ── */}
+      {/* 内容区 */}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
-        <AnimatePresence mode="popLayout">
-          {filtered.length > 0 ? (
-            <motion.div
-              key={activeCategory + searchQuery}
-              className="grid grid-cols-3 gap-3"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-20" style={{ color: '#ff2a6d' }}>
+            <WifiOff size={32} />
+            <p className="text-sm mt-3">无法连接 Hermes</p>
+            <button
+              className="mt-4 px-4 py-2 rounded text-xs"
+              style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.3)', color: '#00f0ff' }}
+              onClick={fetchData}
             >
-              {filtered.map((skill, idx) => {
-                const Icon = iconMap[skill.icon] || Sparkles;
-                return (
-                  <motion.div
-                    key={skill.id}
-                    className="rounded-lg border p-3 flex flex-col group"
-                    style={{
-                      borderColor: skill.added ? `${skill.color}40` : 'rgba(0,240,255,0.1)',
-                      background: skill.added ? `${skill.color}08` : 'rgba(0,0,0,0.3)',
-                    }}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.03, duration: 0.3 }}
-                    layout
-                    whileHover={{
-                      borderColor: `${skill.color}50`,
-                      boxShadow: `0 0 12px ${skill.color}20`,
-                    }}
-                  >
-                    <div className="flex items-start gap-2.5 mb-2">
-                      <div
-                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{
-                          background: `${skill.color}15`,
-                          border: `1px solid ${skill.color}30`,
-                        }}
-                      >
-                        <Icon size={16} color={skill.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
-                          {skill.title}
-                        </h3>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${skill.color}15`, color: skill.color }}>
-                            {skill.source}部
-                          </span>
-                          <span className="text-[9px]" style={{ color: '#666' }}>
-                            {skill.sourceFull}
-                          </span>
+              重试
+            </button>
+          </div>
+        ) : viewMode === 'skills' ? (
+          <AnimatePresence mode="popLayout">
+            {filteredSkills.length > 0 ? (
+              <motion.div
+                key={activeCategory + searchQuery}
+                className="grid grid-cols-3 gap-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {filteredSkills.map((skill, idx) => {
+                  const Icon = categoryIcons[skill.category || ''] || Wrench;
+                  const color = categoryColors[skill.category || ''] || '#00f0ff';
+                  const isAdded = added.has(skill.name);
+                  return (
+                    <motion.div
+                      key={skill.name}
+                      className="rounded-lg border p-3 flex flex-col group"
+                      style={{
+                        borderColor: isAdded ? `${color}40` : 'rgba(0,240,255,0.1)',
+                        background: isAdded ? `${color}08` : 'rgba(0,0,0,0.3)',
+                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(idx * 0.02, 0.5), duration: 0.3 }}
+                      layout
+                      whileHover={{
+                        borderColor: `${color}50`,
+                        boxShadow: `0 0 12px ${color}20`,
+                      }}
+                    >
+                      <div className="flex items-start gap-2.5 mb-2">
+                        <div
+                          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: `${color}15`, border: `1px solid ${color}30` }}
+                        >
+                          <Icon size={16} color={color} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
+                            {skill.name}
+                          </h3>
+                          {skill.category && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>
+                                {categoryLabels[skill.category] || skill.category}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                    <p className="text-[10px] leading-relaxed line-clamp-2 mb-3 flex-1" style={{ color: '#9ca3af' }}>
-                      {skill.desc}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px]" style={{ color: '#666' }}>
-                        本地已部署
-                      </span>
-                      <motion.button
-                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
-                        style={{
-                          background: skill.added ? `${skill.color}20` : 'rgba(0,240,255,0.08)',
-                          border: `1px solid ${skill.added ? `${skill.color}50` : 'rgba(0,240,255,0.2)'}`,
-                          color: skill.added ? skill.color : '#00f0ff',
-                        }}
-                        whileHover={{
-                          background: skill.added ? `${skill.color}30` : 'rgba(0,240,255,0.15)',
-                        }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleToggleAdd(skill.id)}
-                      >
-                        {skill.added ? (
-                          <>
-                            <Check size={10} />
-                            <span>已启用</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={10} />
-                            <span>启用</span>
-                          </>
-                        )}
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="empty"
-              className="flex flex-col items-center justify-center py-20"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
-                style={{ background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.1)' }}
-              >
-                <Search size={20} color="#666" />
-              </div>
-              <p className="text-xs" style={{ color: '#666' }}>
-                没有找到匹配的技能
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                      <p className="text-[10px] leading-relaxed line-clamp-2 mb-3 flex-1" style={{ color: '#9ca3af' }}>
+                        {skill.description}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px]" style={{ color: '#666' }}>
+                          Hermes 已安装
+                        </span>
+                        <motion.button
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
+                          style={{
+                            background: isAdded ? `${color}20` : 'rgba(0,240,255,0.08)',
+                            border: `1px solid ${isAdded ? `${color}50` : 'rgba(0,240,255,0.2)'}`,
+                            color: isAdded ? color : '#00f0ff',
+                          }}
+                          whileHover={{
+                            background: isAdded ? `${color}30` : 'rgba(0,240,255,0.15)',
+                          }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleToggleAdd(skill.name)}
+                        >
+                          {isAdded ? (
+                            <><Check size={10} /><span>已启用</span></>
+                          ) : (
+                            <><Plus size={10} /><span>启用</span></>
+                          )}
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            ) : (
+              <motion.div key="empty" className="flex flex-col items-center justify-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.1)' }}>
+                  <Search size={20} color="#666" />
+                </div>
+                <p className="text-xs" style={{ color: '#666' }}>没有找到匹配的技能</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        ) : (
+          /* 工具集视图 */
+          <AnimatePresence mode="popLayout">
+            {filteredToolsets.length > 0 ? (
+              <motion.div key="toolsets" className="grid grid-cols-2 gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {filteredToolsets.map((toolset, idx) => {
+                  const isAdded = added.has(toolset.name);
+                  return (
+                    <motion.div
+                      key={toolset.name}
+                      className="rounded-lg border p-3 flex flex-col"
+                      style={{
+                        borderColor: isAdded ? 'rgba(0,240,255,0.4)' : 'rgba(0,240,255,0.1)',
+                        background: isAdded ? 'rgba(0,240,255,0.05)' : 'rgba(0,0,0,0.3)',
+                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(idx * 0.02, 0.5), duration: 0.3 }}
+                      whileHover={{ borderColor: 'rgba(0,240,255,0.3)', boxShadow: '0 0 12px rgba(0,240,255,0.1)' }}
+                    >
+                      <div className="flex items-start gap-2.5 mb-2">
+                        <div
+                          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{
+                            background: toolset.enabled ? 'rgba(0,240,255,0.15)' : 'rgba(100,100,100,0.1)',
+                            border: `1px solid ${toolset.enabled ? 'rgba(0,240,255,0.3)' : 'rgba(100,100,100,0.2)'}`,
+                          }}
+                        >
+                          <Layers size={16} color={toolset.enabled ? '#00f0ff' : '#666'} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
+                            {toolset.label}
+                          </h3>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded"
+                              style={{
+                                background: toolset.enabled ? 'rgba(57,255,20,0.15)' : 'rgba(100,100,100,0.15)',
+                                color: toolset.enabled ? '#39ff14' : '#666',
+                              }}
+                            >
+                              {toolset.enabled ? '● 已启用' : '○ 未启用'}
+                            </span>
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded"
+                              style={{
+                                background: toolset.configured ? 'rgba(0,240,255,0.1)' : 'rgba(255,42,109,0.1)',
+                                color: toolset.configured ? '#00f0ff' : '#ff2a6d',
+                              }}
+                            >
+                              {toolset.configured ? '已配置' : '未配置'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] leading-relaxed mb-2" style={{ color: '#9ca3af' }}>
+                        {toolset.description}
+                      </p>
+                      {toolset.tools.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {toolset.tools.slice(0, 4).map((tool) => (
+                            <span key={tool} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'rgba(0,240,255,0.05)', color: '#00f0ff', border: '1px solid rgba(0,240,255,0.15)' }}>
+                              {tool}
+                            </span>
+                          ))}
+                          {toolset.tools.length > 4 && (
+                            <span className="text-[9px] px-1.5 py-0.5" style={{ color: '#666' }}>
+                              +{toolset.tools.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end mt-auto">
+                        <span className="text-[9px] mr-auto" style={{ color: '#666' }}>
+                          {toolset.tools.length} 个工具
+                        </span>
+                        <motion.button
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
+                          style={{
+                            background: isAdded ? 'rgba(0,240,255,0.2)' : 'rgba(0,240,255,0.08)',
+                            border: `1px solid ${isAdded ? 'rgba(0,240,255,0.5)' : 'rgba(0,240,255,0.2)'}`,
+                            color: isAdded ? '#00f0ff' : '#00f0ff',
+                          }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleToggleAdd(toolset.name)}
+                        >
+                          {isAdded ? <><Check size={10} /><span>已关注</span></> : <><Plus size={10} /><span>关注</span></>}
+                        </motion.button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            ) : (
+              <motion.div key="empty" className="flex flex-col items-center justify-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <Filter size={32} color="#666" />
+                <p className="text-xs mt-3" style={{ color: '#666' }}>没有找到匹配的工具集</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );

@@ -6,7 +6,9 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Agent } from '../data';
-import { Activity, Users, Zap, Clock, TrendingUp, Award, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Activity, Users, Zap, Clock, TrendingUp, Award, PanelRightClose, PanelRightOpen, Wifi, WifiOff } from 'lucide-react';
+import { useHermesHealth } from '../hooks/useHermes';
+import { useHermesStats } from '../hooks/useHermesStats';
 
 interface RightOverviewProps {
   agents: Agent[];
@@ -16,14 +18,14 @@ interface RightOverviewProps {
 }
 
 export default function RightOverview({ agents, entryDone, collapsed, onToggle }: RightOverviewProps) {
+  const { online } = useHermesHealth();
+  const { stats } = useHermesStats();
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const busyCount = agents.filter((a) => a.status === 'busy').length;
   const offlineCount = agents.filter((a) => a.status === 'offline').length;
-  const totalTasks = agents.reduce((sum, a) => sum + a.memory.length, 0);
-  const activeTasks = agents.reduce((sum, a) => sum + a.todos.filter((t) => t.status === 'pending').length, 0);
 
-  /* 今日统计卡片 */
-  const stats = [
+  /* 今日统计卡片 — 实时数据 */
+  const statsCards = [
     {
       label: '在线 Agent',
       value: onlineCount,
@@ -33,16 +35,16 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
       bg: 'rgba(0,240,255,0.08)',
     },
     {
-      label: '活跃任务',
-      value: activeTasks,
-      total: totalTasks,
+      label: '活跃会话',
+      value: stats.activeSessions,
+      total: stats.totalSessions,
       icon: Zap,
       color: '#ffd700',
       bg: 'rgba(255,215,0,0.08)',
     },
     {
-      label: '今日处理',
-      value: totalTasks,
+      label: '今日消息',
+      value: stats.todayMessages,
       suffix: '条',
       icon: TrendingUp,
       color: '#39ff14',
@@ -50,8 +52,11 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
     },
   ];
 
-  /* 当前运行状态 */
-  const runningAgents = agents.filter((a) => a.status === 'busy');
+  /* 当前运行 — 最近活跃的会话 */
+  const activeSessions = stats.sessions
+    .filter((s) => s.last_active > Date.now() / 1000 - 3600)
+    .sort((a, b) => b.last_active - a.last_active)
+    .slice(0, 5);
 
   return (
     <motion.div
@@ -133,6 +138,10 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
                     <span>实时</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-1.5 mr-3">
+                  {online ? <Wifi size={12} color="#00f0ff" /> : <WifiOff size={12} color="#666" />}
+                  <span className="text-[10px]" style={{ color: online ? '#00f0ff' : '#666' }}>{online ? '已连接' : '未连接'}</span>
+                </div>
                 {/* 折叠按钮 — 标题行内部右侧，明显位置 */}
                 <motion.button
                   className="flex items-center gap-1 px-2 py-1 rounded transition-colors text-[10px]"
@@ -156,7 +165,7 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
             <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
               {/* 统计卡片 */}
               <div className="px-4 py-3 space-y-2">
-                {stats.map((stat, idx) => {
+                {statsCards.map((stat, idx) => {
                   const Icon = stat.icon;
                   return (
                     <motion.div
@@ -207,14 +216,14 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {runningAgents.length === 0 ? (
+                  {activeSessions.length === 0 ? (
                     <div className="text-[10px] py-2 text-center" style={{ color: '#666' }}>
                       暂无 Agent 执行任务
                     </div>
                   ) : (
-                    runningAgents.map((agent) => (
+                    activeSessions.map((session) => (
                       <div
-                        key={agent.id}
+                        key={session.id}
                         className="flex items-center gap-2 rounded px-3 py-2"
                         style={{ background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.1)' }}
                       >
@@ -223,16 +232,13 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
                           style={{ background: '#ffd700', boxShadow: '0 0 6px #ffd700' }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-medium" style={{ color: '#e0e0e0' }}>
-                            {agent.name}
+                          <p className="text-[11px] font-medium truncate" style={{ color: '#e0e0e0' }}>
+                            {session.title || '无标题'}
                           </p>
                           <p className="text-[9px] truncate" style={{ color: '#666' }}>
-                            {agent.title}
+                            {session.message_count} 条消息 · {new Date(session.last_active * 1000).toLocaleTimeString('zh-CN')}
                           </p>
                         </div>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ color: '#ffd700', background: 'rgba(255,215,0,0.1)' }}>
-                          忙碌
-                        </span>
                       </div>
                     ))
                   )}
@@ -272,7 +278,7 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
                     <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#00f0ff', boxShadow: '0 0 4px #00f0ff' }} />
                     <span>当前在线</span>
                     <span style={{ color: '#00f0ff' }}>•</span>
-                    <span>Teaching 中</span>
+                    <span>{stats.activeSessions} 个活跃会话</span>
                   </div>
 
                   {/* 离线提示 */}

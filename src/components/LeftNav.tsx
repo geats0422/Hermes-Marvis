@@ -18,6 +18,7 @@ import {
   Monitor,
   User,
   Crown,
+  MessageSquare,
 } from 'lucide-react';
 
 interface NavItem {
@@ -51,6 +52,7 @@ const navStructure: NavGroup[] = [
     title: '对话',
     items: [
       { id: 'workspace', label: '大殿', icon: Crown },
+      { id: 'chats', label: '对话记录', icon: MessageSquare },
     ],
   },
 ];

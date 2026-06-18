@@ -1,10 +1,4 @@
-/** ============================================================
- *  DevicePage — 此电脑页面
- *  映射 WSL2 下的所有磁盘（Windows 物理盘 + WSL 文件系统）
- *  展示磁盘分区、WSL 发行版、常用目录
- *  ============================================================ */
-
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   HardDrive,
@@ -23,111 +17,23 @@ import {
   ChevronDown,
   Server,
 } from 'lucide-react';
+import { getDrives, getWslDistros, getWslFilesystems } from '../api/system';
+import type { WindowsDrive, WslDistro, WslMount } from '../api/system';
 
-type OS = 'windows' | 'wsl';
-
-interface Drive {
+interface DriveEntry {
   id: string;
   name: string;
-  letter?: string;        // Windows 盘符
-  path: string;           // 完整路径
-  os: OS;
-  total: string;          // 总容量
-  used: string;           // 已用
-  percent: number;        // 使用率
+  letter: string;
+  path: string;
+  os: 'windows' | 'wsl';
+  totalGB: number;
+  usedGB: number;
+  freeGB: number;
+  percent: number;
   type: 'system' | 'data' | 'wsl';
   description: string;
+  health?: string;
 }
-
-const drives: Drive[] = [
-  // Windows 物理磁盘
-  {
-    id: 'c',
-    name: '系统盘',
-    letter: 'C:',
-    path: '/mnt/c',
-    os: 'windows',
-    total: '512 GB',
-    used: '308 GB',
-    percent: 60,
-    type: 'system',
-    description: 'Windows 11 系统',
-  },
-  {
-    id: 'd',
-    name: '数据盘',
-    letter: 'D:',
-    path: '/mnt/d',
-    os: 'windows',
-    total: '2 TB',
-    used: '420 GB',
-    percent: 21,
-    type: 'data',
-    description: '工作数据 / 仓库',
-  },
-  {
-    id: 'e',
-    name: '备份盘',
-    letter: 'E:',
-    path: '/mnt/e',
-    os: 'windows',
-    total: '1 TB',
-    used: '856 GB',
-    percent: 86,
-    type: 'data',
-    description: '定时备份',
-  },
-  // WSL2 内部
-  {
-    id: 'root',
-    name: 'WSL 根目录',
-    path: '/',
-    os: 'wsl',
-    total: '512 GB',
-    used: '128 GB',
-    percent: 25,
-    type: 'wsl',
-    description: 'WSL2 ext4 vhdx',
-  },
-  {
-    id: 'home',
-    name: '用户目录',
-    path: '/home/leonvo',
-    os: 'wsl',
-    total: '128 GB',
-    used: '42 GB',
-    percent: 33,
-    type: 'wsl',
-    description: 'Ubuntu 用户主目录',
-  },
-];
-
-interface WslDistro {
-  id: string;
-  name: string;
-  version: string;
-  status: 'running' | 'stopped';
-  isDefault?: boolean;
-  path: string;
-}
-
-const wslDistros: WslDistro[] = [
-  {
-    id: 'ubuntu',
-    name: 'Ubuntu',
-    version: '22.04.3 LTS',
-    status: 'running',
-    isDefault: true,
-    path: '\\\\wsl$\\Ubuntu',
-  },
-  {
-    id: 'debian',
-    name: 'Debian',
-    version: '12.5',
-    status: 'stopped',
-    path: '\\\\wsl$\\Debian',
-  },
-];
 
 interface FileItem {
   name: string;
@@ -174,14 +80,14 @@ const getFileColor = (item: FileItem) => {
 };
 
 const commonDirs: { path: string; desc: string; icon: React.ElementType }[] = [
-  { path: '/home/leonvo/Documents', desc: '文档', icon: FileText },
-  { path: '/home/leonvo/Downloads', desc: '下载', icon: Folder },
-  { path: '/home/leonvo/Projects', desc: '项目', icon: Box },
-  { path: '/home/leonvo/.config', desc: '配置', icon: Settings },
+  { path: '/home/hermes-kabuto', desc: '用户主目录', icon: Home },
+  { path: '/home/hermes-kabuto/Documents', desc: '文档', icon: FileText },
+  { path: '/home/hermes-kabuto/Downloads', desc: '下载', icon: Folder },
+  { path: '/home/hermes-kabuto/Projects', desc: '项目', icon: Box },
+  { path: '/home/hermes-kabuto/.config', desc: '配置', icon: Settings },
+  { path: '/home/hermes-kabuto/.local', desc: '用户程序', icon: Box },
   { path: '/etc', desc: '系统配置', icon: Settings },
   { path: '/var/log', desc: '日志', icon: Database },
-  { path: '/opt', desc: '可选软件', icon: Box },
-  { path: '/tmp', desc: '临时文件', icon: Folder },
 ];
 
 const driveTypeColor: Record<string, string> = {
@@ -196,9 +102,84 @@ const driveTypeLabel: Record<string, string> = {
   wsl: 'WSL',
 };
 
+function buildDriveEntries(drives: WindowsDrive[], mounts: WslMount[]): DriveEntry[] {
+  const entries: DriveEntry[] = [];
+
+  for (const d of drives) {
+    const pct = d.TotalGB > 0 ? Math.round(d.UsedGB / d.TotalGB * 100) : 0;
+    entries.push({
+      id: d.Letter.replace(':', '').toLowerCase(),
+      name: d.Label || `${d.Letter} 盘`,
+      letter: d.Letter,
+      path: `/mnt/${d.Letter.replace(':', '').toLowerCase()}`,
+      os: 'windows',
+      totalGB: d.TotalGB,
+      usedGB: d.UsedGB,
+      freeGB: d.FreeGB,
+      percent: pct,
+      type: d.Letter.startsWith('C') ? 'system' : 'data',
+      description: d.Health === 'Healthy' ? '健康' : d.Health,
+      health: d.Health,
+    });
+  }
+
+  const rootMount = mounts.find(m => m.mount === '/' && m.filesystem.startsWith('/dev/'));
+  if (rootMount) {
+    const totalGB = Math.round(rootMount.size_bytes / 1073741824 * 10) / 10;
+    const usedGB = Math.round(rootMount.used_bytes / 1073741824 * 10) / 10;
+    entries.push({
+      id: 'root',
+      name: 'WSL 根目录',
+      letter: '',
+      path: '/',
+      os: 'wsl',
+      totalGB,
+      usedGB,
+      freeGB: Math.round(rootMount.avail_bytes / 1073741824 * 10) / 10,
+      percent: rootMount.used_pct,
+      type: 'wsl',
+      description: `ext4 vhdx · ${rootMount.filesystem}`,
+    });
+  }
+
+  return entries;
+}
+
 export default function DevicePage() {
+  const [drives, setDrives] = useState<DriveEntry[]>([]);
+  const [distros, setDistros] = useState<WslDistro[]>([]);
+  const [mounts, setMounts] = useState<WslMount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedDrive, setSelectedDrive] = useState<string>('root');
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['drives', 'wsl', 'browser']));
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [d, w, f] = await Promise.allSettled([getDrives(), getWslDistros(), getWslFilesystems()]);
+      const driveData = d.status === 'fulfilled' ? d.value.drives : [];
+      const distroData = w.status === 'fulfilled' ? w.value.distros : [];
+      const mountData = f.status === 'fulfilled' ? f.value.mounts : [];
+
+      setDrives(buildDriveEntries(driveData, mountData));
+      setDistros(distroData);
+      setMounts(mountData);
+
+      if (d.status === 'rejected' && w.status === 'rejected' && f.status === 'rejected') {
+        setError('无法连接系统服务');
+      }
+    } catch {
+      setError('加载系统数据失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const toggleSection = (id: string) => {
     setExpandedSections((prev) => {
@@ -211,6 +192,11 @@ export default function DevicePage() {
 
   const currentDrive = drives.find((d) => d.id === selectedDrive);
 
+  const formatGB = (gb: number) => {
+    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} TB`;
+    return `${gb.toFixed(1)} GB`;
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── 顶部标题 ── */}
@@ -221,7 +207,7 @@ export default function DevicePage() {
             此电脑
           </h1>
           <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,215,0,0.15)', color: '#ffd700' }}>
-            WSL2 · Ubuntu 22.04
+            WSL2 · {distros.find(d => d.state === 'Running')?.name ?? 'Ubuntu-22.04'}
           </span>
         </div>
         <motion.button
@@ -233,14 +219,24 @@ export default function DevicePage() {
           }}
           whileHover={{ background: 'rgba(0,240,255,0.15)' }}
           whileTap={{ scale: 0.95 }}
+          onClick={fetchData}
         >
-          <RefreshCw size={10} />
+          <RefreshCw size={10} className={loading ? 'animate-spin' : ''} />
           <span>刷新</span>
         </motion.button>
       </div>
 
       {/* ── 可滚动内容 ── */}
       <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
+        {error && (
+          <div
+            className="rounded-lg border px-4 py-2 text-[11px]"
+            style={{ background: 'rgba(255,42,109,0.08)', borderColor: 'rgba(255,42,109,0.3)', color: '#ff2a6d' }}
+          >
+            {error}
+          </div>
+        )}
+
         {/* ── 设备与驱动器 ── */}
         <Section
           title="设备与驱动器"
@@ -265,7 +261,7 @@ export default function DevicePage() {
                 whileHover={{
                   borderColor: `${driveTypeColor[drive.type]}50`,
                   boxShadow: `0 0 12px ${driveTypeColor[drive.type]}20`,
-                }}
+                } as const}
                 onClick={() => setSelectedDrive(drive.id)}
               >
                 <div className="flex items-start gap-2.5">
@@ -289,9 +285,14 @@ export default function DevicePage() {
                       >
                         {driveTypeLabel[drive.type]}
                       </span>
+                      {drive.health && drive.health !== 'Healthy' && (
+                        <span className="text-[8px] px-1 rounded flex-shrink-0" style={{ background: 'rgba(255,42,109,0.2)', color: '#ff2a6d' }}>
+                          {drive.health}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-[10px] mt-0.5 truncate" style={{ color: '#666' }}>
-                      {drive.path}
+                    <p className="text-[10px] mt-0.5 truncate font-mono" style={{ color: '#666' }}>
+                      {drive.letter || drive.path}
                     </p>
                     <p className="text-[10px] mt-0.5 truncate" style={{ color: '#9ca3af' }}>
                       {drive.description}
@@ -299,10 +300,9 @@ export default function DevicePage() {
                   </div>
                 </div>
 
-                {/* 容量条 */}
                 <div className="mt-3">
                   <div className="flex items-center justify-between text-[9px] mb-1" style={{ color: '#666' }}>
-                    <span>{drive.used} / {drive.total}</span>
+                    <span>{formatGB(drive.usedGB)} / {formatGB(drive.totalGB)}</span>
                     <span style={{ color: drive.percent > 80 ? '#ff2a6d' : drive.percent > 60 ? '#ffd700' : '#39ff14' }}>
                       {drive.percent}%
                     </span>
@@ -320,7 +320,7 @@ export default function DevicePage() {
                       }}
                       initial={{ width: 0 }}
                       animate={{ width: `${drive.percent}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      transition={{ duration: 0.8, ease: 'easeOut' as const }}
                     />
                   </div>
                 </div>
@@ -336,19 +336,19 @@ export default function DevicePage() {
           iconColor="#ffd700"
           expanded={expandedSections.has('wsl')}
           onToggle={() => toggleSection('wsl')}
-          count={wslDistros.length}
+          count={distros.length}
           highlight
         >
           <div className="grid grid-cols-2 gap-3">
-            {wslDistros.map((distro, idx) => {
-              const isRunning = distro.status === 'running';
+            {distros.map((distro, idx) => {
+              const isRunning = distro.state === 'Running';
               return (
                 <motion.div
-                  key={distro.id}
+                  key={distro.name}
                   className="rounded-lg border p-3"
                   style={{
-                    borderColor: 'rgba(255,215,0,0.2)',
-                    background: 'rgba(255,215,0,0.04)',
+                    borderColor: isRunning ? 'rgba(255,215,0,0.3)' : 'rgba(255,215,0,0.1)',
+                    background: isRunning ? 'rgba(255,215,0,0.04)' : 'rgba(0,0,0,0.2)',
                   }}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -369,13 +369,13 @@ export default function DevicePage() {
                         <h3 className="text-[12px] font-bold" style={{ color: '#e0e0e0' }}>
                           {distro.name}
                         </h3>
-                        {distro.isDefault && (
+                        {distro.is_default && (
                           <span className="text-[8px] px-1 rounded" style={{ background: 'rgba(0,240,255,0.15)', color: '#00f0ff' }}>
                             默认
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px]" style={{ color: '#666' }}>{distro.version}</p>
+                      <p className="text-[10px]" style={{ color: '#666' }}>WSL {distro.version}</p>
                     </div>
                   </div>
 
@@ -394,7 +394,7 @@ export default function DevicePage() {
                       </span>
                     </div>
                     <code className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.4)', color: '#9ca3af' }}>
-                      {distro.path}
+                      \\wsl$\{distro.name}
                     </code>
                   </div>
                 </motion.div>
@@ -402,6 +402,52 @@ export default function DevicePage() {
             })}
           </div>
         </Section>
+
+        {/* ── WSL 文件系统 ── */}
+        {mounts.filter(m => m.filesystem.startsWith('/dev/') || m.mount === '/mnt/c').length > 0 && (
+          <Section
+            title="WSL 文件系统挂载"
+            icon={Database}
+            iconColor="#39ff14"
+            expanded={expandedSections.has('mounts')}
+            onToggle={() => toggleSection('mounts')}
+            count={mounts.filter(m => m.filesystem.startsWith('/dev/') || m.mount === '/mnt/c').length}
+          >
+            <div className="space-y-2">
+              {mounts
+                .filter(m => m.filesystem.startsWith('/dev/') || m.mount === '/mnt/c')
+                .map((m) => {
+                  const totalGB = Math.round(m.size_bytes / 1073741824 * 10) / 10;
+                  const usedGB = Math.round(m.used_bytes / 1073741824 * 10) / 10;
+                  return (
+                    <div
+                      key={m.mount}
+                      className="flex items-center gap-3 rounded-md border px-3 py-2"
+                      style={{ borderColor: 'rgba(57,255,20,0.1)', background: 'rgba(0,0,0,0.2)' }}
+                    >
+                      <Database size={12} color="#39ff14" />
+                      <code className="text-[10px] flex-1 truncate" style={{ color: '#e0e0e0' }}>{m.mount}</code>
+                      <span className="text-[9px]" style={{ color: '#666' }}>{formatGB(usedGB)} / {formatGB(totalGB)}</span>
+                      <div className="w-16 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${m.used_pct}%`,
+                            background: m.used_pct > 80
+                              ? 'linear-gradient(90deg, #ff2a6d, #ff8800)'
+                              : 'linear-gradient(90deg, #39ff14, #00f0ff)',
+                          }}
+                        />
+                      </div>
+                      <span className="text-[9px] w-8 text-right" style={{ color: m.used_pct > 80 ? '#ff2a6d' : '#39ff14' }}>
+                        {m.used_pct}%
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </Section>
+        )}
 
         {/* ── 文件浏览 ── */}
         <Section
@@ -415,7 +461,6 @@ export default function DevicePage() {
             className="rounded-lg border overflow-hidden"
             style={{ borderColor: 'rgba(0,240,255,0.1)', background: 'rgba(0,0,0,0.3)' }}
           >
-            {/* 路径栏 */}
             <div
               className="flex items-center gap-1.5 px-3 py-2 border-b text-[10px]"
               style={{ borderColor: 'rgba(0,240,255,0.08)', color: '#9ca3af' }}
@@ -424,12 +469,11 @@ export default function DevicePage() {
               <ChevronRight size={10} color="#444" />
               <span>home</span>
               <ChevronRight size={10} color="#444" />
-              <span>leonvo</span>
+              <span>hermes-kabuto</span>
               <ChevronRight size={10} color="#444" />
               <span style={{ color: '#00f0ff' }}>~</span>
             </div>
 
-            {/* 文件列表 */}
             <div className="divide-y" style={{ borderColor: 'rgba(0,240,255,0.05)' }}>
               {fileBrowser.map((file, idx) => {
                 const Icon = getFileIcon(file);
@@ -492,7 +536,7 @@ export default function DevicePage() {
                   <Icon size={12} color="#9ca3af" />
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-medium" style={{ color: '#e0e0e0' }}>{dir.desc}</p>
-                    <p className="text-[9px] truncate" style={{ color: '#666' }}>{dir.path}</p>
+                    <p className="text-[9px] truncate font-mono" style={{ color: '#666' }}>{dir.path}</p>
                   </div>
                 </motion.button>
               );
@@ -504,7 +548,6 @@ export default function DevicePage() {
   );
 }
 
-/* ── 折叠面板组件 ── */
 function Section({
   title,
   icon: Icon,

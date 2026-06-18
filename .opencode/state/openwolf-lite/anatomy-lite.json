@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "updatedAt": "2026-06-13T04:36:58.280Z",
+  "files": {
+    ".gitignore": {
+      "desc": ".gitignore: # Root",
+      "tokenEstimate": 109,
+      "lastSeenAt": "2026-05-13T07:36:25.341Z"
+    },
+    ".opencode/opencode.json": {
+      "desc": "opencode.json: {",
+      "tokenEstimate": 5147,
+      "lastSeenAt": "2026-05-13T08:38:18.555Z"
+    },
+    ".opencode/templates/project-opencode.json": {
+      "desc": "project-opencode.json: {",
+      "tokenEstimate": 5143,
+      "lastSeenAt": "2026-05-13T08:40:09.875Z"
+    },
+    "README.md": {
+      "desc": "README.md: # Huanyu-Opencode-Config",
+      "tokenEstimate": 535,
+      "lastSeenAt": "2026-05-15T03:23:29.282Z"
+    },
+    "CONTRIBUTING.md": {
+      "desc": "CONTRIBUTING.md: # Contributing",
+      "tokenEstimate": 431,
+      "lastSeenAt": "2026-05-15T03:23:42.551Z"
+    },
+    "docs/new-project-init-checklist.md": {
+      "desc": "new-project-init-checklist.md: # 新项目初始化清单（全局配置 + 项目级镜像 + Commands 文件化）",
+      "tokenEstimate": 690,
+      "lastSeenAt": "2026-05-15T03:24:00.500Z"
+    },
+    "src/types/hermes.ts": {
+      "desc": "hermes.ts: export interface HermesHealth {",
+      "tokenEstimate": 284,
+      "lastSeenAt": "2026-06-09T16:59:09.740Z"
+    },
+    "src/api/hermes.ts": {
+      "desc": "hermes.ts: import type { HermesHealth, HermesSession, HermesMessage, HermesSkill, HermesToo",
+      "tokenEstimate": 1290,
+      "lastSeenAt": "2026-06-09T17:25:37.191Z"
+    },
+    "src/components/SkillsPage.tsx": {
+      "desc": "SkillsPage.tsx: /** ============================================================",
+      "tokenEstimate": 6177,
+      "lastSeenAt": "2026-06-09T15:17:41.835Z"
+    },
+    "vite.config.ts": {
+      "desc": "vite.config.ts: import { defineConfig } from 'vite'",
+      "tokenEstimate": 284,
+      "lastSeenAt": "2026-06-09T16:31:57.554Z"
+    },
+    "src/hooks/useHermes.ts": {
+      "desc": "useHermes.ts: import { useState, useEffect, useCallback, useRef } from 'react';",
+      "tokenEstimate": 1755,
+      "lastSeenAt": "2026-06-11T06:13:56.787Z"
+    },
+    "src/components/ChatListPage.tsx": {
+      "desc": "ChatListPage.tsx: import { useState, useEffect, useRef } from 'react';",
+      "tokenEstimate": 3957,
+      "lastSeenAt": "2026-06-13T04:35:38.657Z"
+    },
+    "src/data.ts": {
+      "desc": "data.ts: /** ============================================================",
+      "tokenEstimate": 3954,
+      "lastSeenAt": "2026-06-09T15:31:44.581Z"
+    },
+    "src/hooks/useAgentStatus.ts": {
+      "desc": "useAgentStatus.ts: import { useState, useEffect, useCallback, useRef } from 'react';",
+      "tokenEstimate": 984,
+      "lastSeenAt": "2026-06-09T15:35:18.327Z"
+    },
+    "src/hooks/useAgentMemory.ts": {
+      "desc": "useAgentMemory.ts: import { useState, useEffect, useCallback } from 'react';",
+      "tokenEstimate": 1633,
+      "lastSeenAt": "2026-06-09T15:39:27.189Z"
+    },
+    "src/components/ScrollDetailModal.tsx": {
+      "desc": "ScrollDetailModal.tsx: import { useEffect, useRef, useState } from 'react';",
+      "tokenEstimate": 4124,
+      "lastSeenAt": "2026-06-13T04:36:58.280Z"
+    },
+    "src/App.tsx": {
+      "desc": "App.tsx: /** ============================================================",
+      "tokenEstimate": 4337,
+      "lastSeenAt": "2026-06-09T15:38:35.036Z"
+    },
+    "scripts/cron-server.py": {
+      "desc": "cron-server.py: \"\"\"",
+      "tokenEstimate": 3211,
+      "lastSeenAt": "2026-06-09T16:53:57.406Z"
+    },
+    "package.json": {
+      "desc": "package.json: {",
+      "tokenEstimate": 392,
+      "lastSeenAt": "2026-06-09T15:44:06.710Z"
+    },
+    "src/api/cron.ts": {
+      "desc": "cron.ts: export interface CronJob {",
+      "tokenEstimate": 755,
+      "lastSeenAt": "2026-06-09T16:50:35.758Z"
+    },
+    "src/components/AutoTaskPage.tsx": {
+      "desc": "AutoTaskPage.tsx: /** ============================================================",
+      "tokenEstimate": 6713,
+      "lastSeenAt": "2026-06-09T15:47:20.652Z"
+    },
+    "src/components/NewChatPage.tsx": {
+      "desc": "NewChatPage.tsx: import { useState, useRef, useEffect } from 'react';",
+      "tokenEstimate": 5797,
+      "lastSeenAt": "2026-06-13T04:36:57.041Z"
+    },
+    "scripts/test_ps.py": {
+      "desc": "test_ps.py: import subprocess, json, sys",
+      "tokenEstimate": 133,
+      "lastSeenAt": "2026-06-09T16:03:36.647Z"
+    },
+    "src/api/system.ts": {
+      "desc": "system.ts: export interface WindowsDrive {",
+      "tokenEstimate": 347,
+      "lastSeenAt": "2026-06-09T16:50:47.338Z"
+    },
+    "src/components/DevicePage.tsx": {
+      "desc": "DevicePage.tsx: import { useState, useEffect, useCallback } from 'react';",
+      "tokenEstimate": 6849,
+      "lastSeenAt": "2026-06-09T16:06:37.287Z"
+    },
+    "AGENTS.md": {
+      "desc": "AGENTS.md: # AGENTS.md",
+      "tokenEstimate": 1634,
+      "lastSeenAt": "2026-06-09T16:09:12.335Z"
+    },
+    ".env.example": {
+      "desc": ".env.example: # Hermes Marvis Frontend Configuration",
+      "tokenEstimate": 193,
+      "lastSeenAt": "2026-06-09T16:51:08.822Z"
+    },
+    "scripts/obsidian-server.js": {
+      "desc": "obsidian-server.js: import http from 'http';",
+      "tokenEstimate": 2797,
+      "lastSeenAt": "2026-06-10T01:40:49.651Z"
+    },
+    "src/components/KnowledgePage.tsx": {
+      "desc": "KnowledgePage.tsx: import { useState, useEffect, useMemo, useCallback, useRef } from 'react';",
+      "tokenEstimate": 7943,
+      "lastSeenAt": "2026-06-10T01:45:14.672Z"
+    },
+    "src/hooks/useAttachments.ts": {
+      "desc": "useAttachments.ts: import { useState, useRef, useCallback } from 'react';",
+      "tokenEstimate": 2274,
+      "lastSeenAt": "2026-06-13T04:33:24.761Z"
+    }
+  }
+}

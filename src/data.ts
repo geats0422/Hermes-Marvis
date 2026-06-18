@@ -223,9 +223,9 @@ export const agents: Agent[] = [
     name: '刑部尚书',
     title: '合规与审计',
     department: '刑',
-    status: 'offline',
+    status: 'slacking',
     position: { x: 20, y: 80, scale: 0.85, zIndex: 3 },
-    avatar: { glow: 'transparent', action: 'ghost' },
+    avatar: { glow: '#39ff14', action: 'sleeping' },
     config: `## 刑部配置
 
 - **职能**: 合规检查、数据隐私、审计报告

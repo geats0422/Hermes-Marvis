@@ -7,6 +7,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import type { Agent } from './data';
 import { agents as initialAgents } from './data';
+import { useAgentStatus } from './hooks/useAgentStatus';
+import { useAgentMemory } from './hooks/useAgentMemory';
 import CyberPalaceBackground from './components/CyberPalaceBackground';
 import StarEntryRitual from './components/StarEntryRitual';
 import DeskStation from './components/DeskStation';
@@ -20,9 +22,12 @@ import KnowledgePage from './components/KnowledgePage';
 import AssetsPage from './components/AssetsPage';
 import DevicePage from './components/DevicePage';
 import SettingsModal from './components/SettingsModal';
+import ChatListPage from './components/ChatListPage';
 
 export default function App() {
   const [agents] = useState<Agent[]>(initialAgents);
+  const { statuses } = useAgentStatus(agents);
+  const { memories } = useAgentMemory();
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entryDone, setEntryDone] = useState(false);
@@ -77,6 +82,21 @@ export default function App() {
     setEntryDone(true);
   }, []);
 
+  /* 获取 Agent 实时状态 */
+  const getAgentStatus = useCallback(
+    (agentId: string) => {
+      const s = statuses.find((st) => st.id === agentId);
+      return s?.status || 'online';
+    },
+    [statuses],
+  );
+
+  /* 获取带实时状态的 agents 列表 */
+  const agentsWithStatus = agents.map((agent) => ({
+    ...agent,
+    status: getAgentStatus(agent.id),
+  }));
+
   /* ── 渲染 ── */
   return (
     <div className="relative w-full h-full overflow-hidden flex flex-col" style={{ background: '#0a0a0f' }}>
@@ -95,7 +115,7 @@ export default function App() {
           transition={{ duration: 0.5 }}
         >
           <div className="space-y-3">
-            {agents.map((agent) => {
+            {agentsWithStatus.map((agent) => {
               const statusColor = {
                 online: '#00f0ff',
                 busy: '#ffd700',
@@ -169,6 +189,8 @@ export default function App() {
               <AssetsPage />
             ) : activeNavId === 'device' ? (
               <DevicePage />
+            ) : activeNavId === 'chats' ? (
+              <ChatListPage />
             ) : (
               <>
                 {/* 顶部标题行 */}
@@ -187,9 +209,9 @@ export default function App() {
                         九部 Agent 协同办公
                       </p>
                     </div>
-                    {/* 团队成员头像行 */}
-                    <div className="flex items-center gap-1 ml-4">
-                      {agents.slice(0, 5).map((agent, idx) => (
+          {/* 团队成员头像行 */}
+          <div className="flex items-center gap-1 ml-4">
+            {agentsWithStatus.slice(0, 5).map((agent, idx) => (
                         <motion.div
                           key={agent.id}
                           className="w-7 h-7 rounded-full border flex items-center justify-center text-[9px] font-bold cursor-pointer"
@@ -258,7 +280,7 @@ export default function App() {
                     animate={{ opacity: entryDone ? 1 : 0 }}
                     transition={{ delay: 0.5, duration: 0.8 }}
                   >
-                    {agents.map((agent, index) => (
+                    {agentsWithStatus.map((agent, index) => (
                       <DeskStation
                         key={agent.id}
                         agent={agent}
@@ -276,7 +298,7 @@ export default function App() {
 
           {/* 右侧今日概览 */}
           <RightOverview
-            agents={agents}
+            agents={agentsWithStatus}
             entryDone={entryDone}
             collapsed={rightCollapsed}
             onToggle={handleToggleRight}
@@ -289,6 +311,7 @@ export default function App() {
         agent={selectedAgent}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
+        memories={memories}
       />
 
       {/* 设置弹窗 */}
@@ -314,19 +337,19 @@ export default function App() {
           <div className="flex items-center gap-6">
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full" style={{ background: '#00f0ff' }} />
-              在线 {agents.filter((a) => a.status === 'online').length}
+              在线 {agentsWithStatus.filter((a) => a.status === 'online').length}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full" style={{ background: '#ffd700' }} />
-              忙碌 {agents.filter((a) => a.status === 'busy').length}
+              忙碌 {agentsWithStatus.filter((a) => a.status === 'busy').length}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full" style={{ background: '#39ff14' }} />
-              摸鱼 {agents.filter((a) => a.status === 'slacking').length}
+              摸鱼 {agentsWithStatus.filter((a) => a.status === 'slacking').length}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full" style={{ background: '#666' }} />
-              离线 {agents.filter((a) => a.status === 'offline').length}
+              离线 {agentsWithStatus.filter((a) => a.status === 'offline').length}
             </span>
             <span style={{ color: '#444' }}>|</span>
             <span>2026-06-07 | Hermes Marvis v1.0</span>

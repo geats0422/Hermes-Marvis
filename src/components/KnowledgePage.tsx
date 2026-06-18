@@ -1,11 +1,8 @@
-/** ============================================================
- *  KnowledgePage — 知识库页面
- *  读取本地 Obsidian + LLM Wiki 构建的知识库
- *  左侧文件夹树 + 右侧文档预览
- *  ============================================================ */
-
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import {
   Search,
   Folder,
@@ -13,201 +10,328 @@ import {
   FileText,
   ChevronRight,
   BookOpen,
-  Tag,
   Clock,
   BookMarked,
-  Link2,
-  FileCode,
-  Network,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  Check,
+  FolderPlus,
+  Shield,
+  Eye,
 } from 'lucide-react';
+import { agents } from '../data';
 
-type Source = 'obsidian' | 'llm-wiki' | 'all';
+type AgentRole = 'shoufu' | 'cangbu' | 'libu' | 'hubu' | 'libu2' | 'bingbu' | 'xingbu' | 'gongbu' | 'yibu';
 
-interface DocNode {
-  id: string;
-  name: string;
-  type: 'folder' | 'doc';
-  children?: DocNode[];
-  source?: 'obsidian' | 'llm-wiki';
-  tags?: string[];
-  updatedAt?: string;
-  content?: string;
-  links?: string[];
+const KNOWLEDGE_ADMINS: AgentRole[] = ['shoufu', 'cangbu'];
+
+function agentIdToRole(id: string): AgentRole | null {
+  const map: Record<string, AgentRole> = {
+    shoufu: 'shoufu',
+    cangbu: 'cangbu',
+    libu: 'libu',
+    hubu: 'hubu',
+    libu2: 'libu2',
+    bingbu: 'bingbu',
+    xingbu: 'xingbu',
+    gongbu: 'gongbu',
+    yibu: 'yibu',
+  };
+  return map[id] || null;
 }
 
-const knowledgeTree: DocNode[] = [
-  {
-    id: 'obsidian',
-    name: 'Obsidian Vault',
-    type: 'folder',
-    source: 'obsidian',
-    children: [
-      {
-        id: 'ob-daily',
-        name: '📅 每日笔记',
-        type: 'folder',
-        children: [
-          { id: 'd-1', name: '2026-06-05.md', type: 'doc', source: 'obsidian', updatedAt: '2天前', tags: ['日记'], content: '今日主要完成了 Hermes Agent 系统的初步框架搭建...' },
-          { id: 'd-2', name: '2026-06-06.md', type: 'doc', source: 'obsidian', updatedAt: '昨天', tags: ['日记', '会议'], content: '与团队讨论了 Hermes 的多 Agent 协同方案...' },
-          { id: 'd-3', name: '2026-06-07.md', type: 'doc', source: 'obsidian', updatedAt: '今天', tags: ['日记'], content: '今天集中处理了 LLM Wiki 与 Obsidian 的同步问题...' },
-        ],
-      },
-      {
-        id: 'ob-projects',
-        name: '🚀 项目文档',
-        type: 'folder',
-        children: [
-          { id: 'p-1', name: 'Hermes 系统设计.md', type: 'doc', source: 'obsidian', updatedAt: '3小时前', tags: ['系统', '架构'], content: '# Hermes Agent 系统设计\n\n## 概述\n本系统采用分层架构设计...', links: ['p-2', 'p-3'] },
-          { id: 'p-2', name: '首辅调度算法.md', type: 'doc', source: 'obsidian', updatedAt: '昨天', tags: ['算法', '调度'], content: '# 首辅调度算法\n\n## 优先级队列\n基于任务权重...', links: ['p-1'] },
-          { id: 'p-3', name: '九部职责划分.md', type: 'doc', source: 'obsidian', updatedAt: '2天前', tags: ['架构'], content: '# 九部职责\n\n- 吏部：人事管理\n- 户部：资源管理\n...' },
-        ],
-      },
-      {
-        id: 'ob-research',
-        name: '🔬 技术研究',
-        type: 'folder',
-        children: [
-          { id: 'r-1', name: 'RAG 检索增强.md', type: 'doc', source: 'obsidian', updatedAt: '5天前', tags: ['AI', 'RAG'], content: '# RAG 检索增强生成\n\nRAG 通过检索外部知识库...' },
-          { id: 'r-2', name: 'Prompt Engineering.md', type: 'doc', source: 'obsidian', updatedAt: '1周前', tags: ['AI'], content: '# Prompt 工程' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'llm-wiki',
-    name: 'LLM Wiki',
-    type: 'folder',
-    source: 'llm-wiki',
-    children: [
-      {
-        id: 'lw-topics',
-        name: '📚 主题库',
-        type: 'folder',
-        children: [
-          { id: 't-1', name: 'Transformer 架构.md', type: 'doc', source: 'llm-wiki', updatedAt: '实时同步', tags: ['LLM', '架构'], content: '# Transformer 架构\n\nTransformer 是基于自注意力机制的神经网络...', links: ['t-2', 't-3'] },
-          { id: 't-2', name: 'Self-Attention 机制.md', type: 'doc', source: 'llm-wiki', updatedAt: '实时同步', tags: ['LLM'], content: '# Self-Attention\n\n自注意力机制计算 Query/Key/Value...' },
-          { id: 't-3', name: 'Multi-Head Attention.md', type: 'doc', source: 'llm-wiki', updatedAt: '实时同步', tags: ['LLM'], content: '# Multi-Head Attention' },
-        ],
-      },
-      {
-        id: 'lw-skills',
-        name: '⚙️ 技能词条',
-        type: 'folder',
-        children: [
-          { id: 's-1', name: 'RAG 检索.md', type: 'doc', source: 'llm-wiki', updatedAt: '实时同步', tags: ['RAG', '技能'], content: '# RAG 检索技能\n\n通过向量数据库 + 语义检索实现...' },
-          { id: 's-2', name: '工具调用 Function Calling.md', type: 'doc', source: 'llm-wiki', updatedAt: '实时同步', tags: ['Agent', '工具'], content: '# Function Calling\n\n让 LLM 调用外部 API...' },
-        ],
-      },
-    ],
-  },
-];
+function isAdmin(role: AgentRole | null): boolean {
+  return role !== null && KNOWLEDGE_ADMINS.includes(role);
+}
 
-const sourceColor: Record<string, string> = {
-  obsidian: '#7c3aed',
-  'llm-wiki': '#00f0ff',
-};
+interface DocNode {
+  name: string;
+  path: string;
+  type: 'folder' | 'doc';
+  children?: DocNode[];
+  size?: number;
+  updatedAt?: string;
+  content?: string;
+}
 
-const sourceLabel: Record<string, string> = {
-  obsidian: 'Obsidian',
-  'llm-wiki': 'LLM Wiki',
-};
+interface VaultInfo {
+  vault: string;
+  path: string;
+  tree: DocNode[];
+}
 
 export default function KnowledgePage() {
-  const [source, setSource] = useState<Source>('all');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['obsidian', 'ob-projects', 'llm-wiki', 'lw-topics']));
-  const [selectedId, setSelectedId] = useState<string>('p-1');
+  const [vaultInfo, setVaultInfo] = useState<VaultInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<DocNode | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [activeRole, setActiveRole] = useState<AgentRole>('shoufu');
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [showNewFile, setShowNewFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileParent, setNewFileParent] = useState('');
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderParent, setNewFolderParent] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
 
-  /* 递归查找文档 */
-  const findDoc = (nodes: DocNode[], id: string): DocNode | null => {
-    for (const n of nodes) {
-      if (n.id === id) return n;
-      if (n.children) {
-        const r = findDoc(n.children, id);
-        if (r) return r;
+  const canWrite = isAdmin(activeRole);
+
+  const roleHeaders = useMemo(() => ({ 'X-Agent-Role': activeRole }), [activeRole]);
+
+  const fetchTree = useCallback(async () => {
+    try {
+      const res = await fetch('/obsidian-api/api/tree');
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      setVaultInfo(data);
+      setError(null);
+      setLastRefresh(new Date());
+      if (data.tree.length > 0 && !expanded.size) {
+        setExpanded(new Set([data.tree[0].path]));
       }
+    } catch {
+      setError('无法连接知识库服务');
+    } finally {
+      setLoading(false);
     }
-    return null;
-  };
+  }, []);
 
-  /* 平铺所有文档 */
-  const flattenDocs = (nodes: DocNode[]): DocNode[] => {
-    const out: DocNode[] = [];
-    for (const n of nodes) {
-      if (n.type === 'doc') {
-        if (source === 'all' || n.source === source) out.push(n);
+  const fetchFile = useCallback(async (filePath: string) => {
+    try {
+      const res = await fetch(`/obsidian-api/api/file/${encodeURIComponent(filePath)}`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      setSelectedDoc(data);
+    } catch {
+      setSelectedDoc({ name: 'Error', path: filePath, type: 'doc', content: '无法加载文件内容' });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTree();
+    const interval = setInterval(fetchTree, 30000);
+    return () => clearInterval(interval);
+  }, [fetchTree]);
+
+  const allDocs = useMemo(() => {
+    if (!vaultInfo) return [];
+    const docs: DocNode[] = [];
+    const flatten = (nodes: DocNode[]) => {
+      for (const n of nodes) {
+        if (n.type === 'doc') docs.push(n);
+        if (n.children) flatten(n.children);
       }
-      if (n.children) out.push(...flattenDocs(n.children));
-    }
-    return out;
-  };
+    };
+    flatten(vaultInfo.tree);
+    return docs;
+  }, [vaultInfo]);
 
-  const allDocs = useMemo(() => flattenDocs(knowledgeTree), [source]);
-  const selectedDoc = findDoc(knowledgeTree, selectedId);
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return allDocs.filter(
-      (d) => d.name.toLowerCase().includes(q) || (d.content && d.content.toLowerCase().includes(q))
-    );
+    return allDocs.filter((d) => d.name.toLowerCase().includes(q));
   }, [searchQuery, allDocs]);
 
-  const toggleFolder = (id: string) => {
+  const toggleFolder = (folderPath: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
       return next;
     });
   };
 
-  /* 渲染树 */
+  const handleSelectDoc = (doc: DocNode) => {
+    setSelectedPath(doc.path);
+    setEditing(false);
+    fetchFile(doc.path);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedDoc || !canWrite) return;
+    setEditContent(selectedDoc.content || '');
+    setEditing(true);
+    setActionError(null);
+    setTimeout(() => editRef.current?.focus(), 50);
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(false);
+    setEditContent('');
+    setActionError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedPath || !canWrite) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/obsidian-api/api/file/${encodeURIComponent(selectedPath)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...roleHeaders },
+        body: JSON.stringify({ content: editContent }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `保存失败 (${res.status})`);
+      }
+      setEditing(false);
+      await fetchFile(selectedPath);
+      await fetchTree();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!selectedPath || !canWrite) return;
+    setActionError(null);
+    try {
+      const res = await fetch(`/obsidian-api/api/file/${encodeURIComponent(selectedPath)}`, {
+        method: 'DELETE',
+        headers: roleHeaders,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `删除失败 (${res.status})`);
+      }
+      setSelectedPath(null);
+      setSelectedDoc(null);
+      setEditing(false);
+      await fetchTree();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '删除失败');
+    }
+  };
+
+  const handleCreateFile = async () => {
+    if (!canWrite || !newFileName.trim()) return;
+    setActionError(null);
+    const name = newFileName.trim().endsWith('.md') ? newFileName.trim() : `${newFileName.trim()}.md`;
+    const relPath = newFileParent ? `${newFileParent}/${name}` : name;
+    try {
+      const res = await fetch('/obsidian-api/api/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...roleHeaders },
+        body: JSON.stringify({ path: relPath, content: `# ${name.replace('.md', '')}\n\n` }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `创建失败 (${res.status})`);
+      }
+      setShowNewFile(false);
+      setNewFileName('');
+      setNewFileParent('');
+      await fetchTree();
+      setSelectedPath(relPath);
+      await fetchFile(relPath);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '创建文件失败');
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!canWrite || !newFolderName.trim()) return;
+    setActionError(null);
+    const relPath = newFolderParent ? `${newFolderParent}/${newFolderName.trim()}` : newFolderName.trim();
+    try {
+      const res = await fetch('/obsidian-api/api/folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...roleHeaders },
+        body: JSON.stringify({ path: relPath }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `创建失败 (${res.status})`);
+      }
+      setShowNewFolder(false);
+      setNewFolderName('');
+      setNewFolderParent('');
+      await fetchTree();
+      setExpanded((prev) => new Set([...prev, relPath]));
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '创建文件夹失败');
+    }
+  };
+
+  const handleDeleteFolder = async (folderPath: string) => {
+    if (!canWrite) return;
+    setActionError(null);
+    try {
+      const res = await fetch(`/obsidian-api/api/folder/${encodeURIComponent(folderPath)}`, {
+        method: 'DELETE',
+        headers: roleHeaders,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `删除失败 (${res.status})`);
+      }
+      await fetchTree();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : '删除文件夹失败');
+    }
+  };
+
   const renderTree = (nodes: DocNode[], depth = 0) => {
     return nodes.map((node) => {
-      if (source !== 'all' && node.source && node.source !== source) return null;
       if (node.type === 'folder') {
-        const isOpen = expanded.has(node.id);
+        const isOpen = expanded.has(node.path);
         return (
-          <div key={node.id}>
-            <button
-              className="w-full flex items-center gap-1.5 py-1.5 px-2 rounded text-[11px] hover:bg-white/5 transition-colors"
+          <div key={node.path}>
+            <div
+              className="w-full flex items-center gap-1.5 py-1.5 px-2 rounded text-[11px] hover:bg-white/5 transition-colors group"
               style={{ paddingLeft: 8 + depth * 12 }}
-              onClick={() => toggleFolder(node.id)}
             >
-              <ChevronRight
-                size={11}
-                style={{
-                  color: '#666',
-                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s',
-                }}
-              />
-              {isOpen ? (
-                <FolderOpen size={12} color={node.source ? sourceColor[node.source] : '#9ca3af'} />
-              ) : (
-                <Folder size={12} color={node.source ? sourceColor[node.source] : '#9ca3af'} />
+              <button className="flex items-center gap-1.5 flex-1 min-w-0 text-left" onClick={() => toggleFolder(node.path)}>
+                <ChevronRight size={11} style={{ color: '#666', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }} />
+                {isOpen ? <FolderOpen size={12} color="#7c3aed" /> : <Folder size={12} color="#7c3aed" />}
+                <span className="flex-1 truncate" style={{ color: '#e0e0e0' }}>{node.name}</span>
+                <span className="text-[9px]" style={{ color: '#666' }}>{node.children?.length || 0}</span>
+              </button>
+              {canWrite && (
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    className="p-0.5 rounded hover:bg-white/10"
+                    title="新建文件"
+                    onClick={() => { setShowNewFile(true); setNewFileParent(node.path); setNewFileName(''); }}
+                  >
+                    <Plus size={10} color="#00f0ff" />
+                  </button>
+                  <button
+                    className="p-0.5 rounded hover:bg-white/10"
+                    title="新建文件夹"
+                    onClick={() => { setShowNewFolder(true); setNewFolderParent(node.path); setNewFolderName(''); }}
+                  >
+                    <FolderPlus size={10} color="#7c3aed" />
+                  </button>
+                  <button
+                    className="p-0.5 rounded hover:bg-red-500/20"
+                    title="删除文件夹"
+                    onClick={() => handleDeleteFolder(node.path)}
+                  >
+                    <Trash2 size={10} color="#ff2a6d" />
+                  </button>
+                </div>
               )}
-              <span className="flex-1 text-left truncate" style={{ color: '#e0e0e0' }}>
-                {node.name}
-              </span>
-              {node.source && (
-                <span
-                  className="text-[8px] px-1 rounded"
-                  style={{ background: `${sourceColor[node.source]}20`, color: sourceColor[node.source] }}
-                >
-                  {sourceLabel[node.source]}
-                </span>
-              )}
-            </button>
+            </div>
             <AnimatePresence>
               {isOpen && node.children && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={{ overflow: 'hidden' }}
-                >
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'hidden' }}>
                   {renderTree(node.children, depth + 1)}
                 </motion.div>
               )}
@@ -217,62 +341,147 @@ export default function KnowledgePage() {
       }
       return (
         <button
-          key={node.id}
+          key={node.path}
           className="w-full flex items-center gap-1.5 py-1.5 px-2 rounded text-[11px] transition-colors"
           style={{
             paddingLeft: 8 + depth * 12 + 12,
-            background: selectedId === node.id ? 'rgba(0,240,255,0.1)' : 'transparent',
-            color: selectedId === node.id ? '#00f0ff' : '#9ca3af',
+            background: selectedPath === node.path ? 'rgba(0,240,255,0.1)' : 'transparent',
+            color: selectedPath === node.path ? '#00f0ff' : '#9ca3af',
           }}
-          onClick={() => setSelectedId(node.id)}
+          onClick={() => handleSelectDoc(node)}
         >
           <FileText size={11} />
           <span className="flex-1 text-left truncate">{node.name}</span>
-          {node.source && (
-            <span
-              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              style={{ background: sourceColor[node.source] }}
-            />
+          {node.updatedAt && (
+            <span className="text-[8px]" style={{ color: '#666' }}>
+              {new Date(node.updatedAt).toLocaleDateString('zh-CN')}
+            </span>
           )}
         </button>
       );
     });
   };
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full" style={{ color: '#666' }}>
+        <RefreshCw size={24} className="animate-spin" />
+        <p className="text-sm mt-3">加载知识库…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full" style={{ color: '#ff2a6d' }}>
+        <WifiOff size={32} />
+        <p className="text-sm mt-3">{error}</p>
+        <p className="text-[11px] mt-2" style={{ color: '#666' }}>
+          请先启动知识库服务：node scripts/obsidian-server.js
+        </p>
+        <button
+          className="mt-4 px-4 py-2 rounded text-xs"
+          style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.3)', color: '#00f0ff' }}
+          onClick={fetchTree}
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ── 顶部标题区 ── */}
+      {/* 顶部标题区 */}
       <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           <BookMarked size={16} color="#00f0ff" />
           <h1 className="text-base font-bold tracking-wider" style={{ color: '#e0e0e0' }}>
             知识库
           </h1>
-          <span className="text-[10px] ml-2" style={{ color: '#666' }}>
-            {allDocs.length} 篇文档
-          </span>
+          {vaultInfo && (
+            <>
+              <span className="text-[10px] ml-2 px-2 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.15)', color: '#7c3aed' }}>
+                {vaultInfo.vault}
+              </span>
+              <span className="text-[10px]" style={{ color: '#666' }}>
+                {allDocs.length} 篇文档
+              </span>
+            </>
+          )}
         </div>
 
-        {/* 来源切换 */}
-        <div className="flex items-center gap-1 rounded-md p-0.5" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.1)' }}>
-          {(['all', 'obsidian', 'llm-wiki'] as Source[]).map((s) => (
-            <button
-              key={s}
-              className="px-2.5 py-1 rounded text-[10px] transition-colors"
-              style={{
-                background: source === s ? 'rgba(0,240,255,0.15)' : 'transparent',
-                color: source === s ? '#00f0ff' : '#9ca3af',
-                fontWeight: source === s ? 700 : 400,
-              }}
-              onClick={() => setSource(s)}
+        <div className="flex items-center gap-3">
+          {lastRefresh && (
+            <span className="text-[10px] flex items-center gap-1" style={{ color: '#666' }}>
+              <Wifi size={10} color="#00f0ff" />
+              更新于 {lastRefresh.toLocaleTimeString('zh-CN')}
+            </span>
+          )}
+
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded border" style={{ borderColor: canWrite ? 'rgba(0,240,255,0.2)' : 'rgba(255,255,255,0.08)', background: canWrite ? 'rgba(0,240,255,0.06)' : 'rgba(100,100,100,0.1)' }}>
+            {canWrite ? <Shield size={10} color="#00f0ff" /> : <Eye size={10} color="#666" />}
+            <select
+              value={activeRole}
+              onChange={(e) => { setActiveRole(e.target.value as AgentRole); setEditing(false); setActionError(null); }}
+              className="bg-transparent outline-none text-[10px] cursor-pointer"
+              style={{ color: canWrite ? '#00f0ff' : '#9ca3af' }}
             >
-              {s === 'all' ? '全部' : sourceLabel[s]}
-            </button>
-          ))}
+              {agents.map((a) => {
+                const role = agentIdToRole(a.id);
+                if (!role) return null;
+                return (
+                  <option key={a.id} value={role} style={{ background: '#1a1a2e', color: '#e0e0e0' }}>
+                    {a.name}（{a.department}）{isAdmin(role) ? ' ✦' : ''}
+                  </option>
+                );
+              })}
+            </select>
+            <span className="text-[9px]" style={{ color: canWrite ? '#00f0ff' : '#666' }}>
+              {canWrite ? '可编辑' : '只读'}
+            </span>
+          </div>
+
+          {canWrite && (
+            <>
+              <button
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+                style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }}
+                onClick={() => { setShowNewFile(true); setNewFileParent(''); setNewFileName(''); }}
+              >
+                <Plus size={10} />
+                新建文件
+              </button>
+              <button
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+                style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#7c3aed' }}
+                onClick={() => { setShowNewFolder(true); setNewFolderParent(''); setNewFolderName(''); }}
+              >
+                <FolderPlus size={10} />
+                新建文件夹
+              </button>
+            </>
+          )}
+
+          <button
+            className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+            style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }}
+            onClick={fetchTree}
+          >
+            <RefreshCw size={10} />
+            刷新
+          </button>
         </div>
       </div>
 
-      {/* ── 主体三栏布局 ── */}
+      {actionError && (
+        <div className="mx-6 mb-2 px-3 py-1.5 rounded text-[10px] border flex items-center justify-between" style={{ background: 'rgba(255,42,109,0.1)', borderColor: 'rgba(255,42,109,0.2)', color: '#ff2a6d' }}>
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)}><X size={10} color="#ff2a6d" /></button>
+        </div>
+      )}
+
+      {/* 主体三栏布局 */}
       <div className="flex-1 flex min-h-0 px-6 pb-4 gap-3">
         {/* 左侧：文件树 */}
         <div
@@ -297,6 +506,58 @@ export default function KnowledgePage() {
             </div>
           </div>
 
+          {/* 新建文件/文件夹弹窗 */}
+          <AnimatePresence>
+            {showNewFile && canWrite && (
+              <motion.div
+                className="px-3 py-2 border-b flex-shrink-0"
+                style={{ borderColor: 'rgba(0,240,255,0.15)', background: 'rgba(0,240,255,0.04)' }}
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              >
+                <p className="text-[9px] mb-1" style={{ color: '#666' }}>
+                  新建文件 {newFileParent ? `在 ${newFileParent}` : '（根目录）'}
+                </p>
+                <div className="flex gap-1">
+                  <input
+                    value={newFileName}
+                    onChange={(e) => setNewFileName(e.target.value)}
+                    placeholder="文件名（自动加 .md）"
+                    className="flex-1 bg-transparent outline-none text-[10px] px-2 py-1 rounded border"
+                    style={{ borderColor: 'rgba(0,240,255,0.2)', color: '#e0e0e0' }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
+                    autoFocus
+                  />
+                  <button className="p-1 rounded" style={{ color: '#00f0ff' }} onClick={handleCreateFile}><Check size={12} /></button>
+                  <button className="p-1 rounded" style={{ color: '#666' }} onClick={() => setShowNewFile(false)}><X size={12} /></button>
+                </div>
+              </motion.div>
+            )}
+            {showNewFolder && canWrite && (
+              <motion.div
+                className="px-3 py-2 border-b flex-shrink-0"
+                style={{ borderColor: 'rgba(124,58,237,0.15)', background: 'rgba(124,58,237,0.04)' }}
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              >
+                <p className="text-[9px] mb-1" style={{ color: '#666' }}>
+                  新建文件夹 {newFolderParent ? `在 ${newFolderParent}` : '（根目录）'}
+                </p>
+                <div className="flex gap-1">
+                  <input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="文件夹名"
+                    className="flex-1 bg-transparent outline-none text-[10px] px-2 py-1 rounded border"
+                    style={{ borderColor: 'rgba(124,58,237,0.2)', color: '#e0e0e0' }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                    autoFocus
+                  />
+                  <button className="p-1 rounded" style={{ color: '#7c3aed' }} onClick={handleCreateFolder}><Check size={12} /></button>
+                  <button className="p-1 rounded" style={{ color: '#666' }} onClick={() => setShowNewFolder(false)}><X size={12} /></button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* 文件树 */}
           <div className="flex-1 overflow-y-auto py-1">
             {searchQuery.trim() ? (
@@ -306,11 +567,11 @@ export default function KnowledgePage() {
                 </p>
                 {searchResults.map((doc) => (
                   <button
-                    key={doc.id}
+                    key={doc.path}
                     className="w-full flex items-center gap-1.5 py-1.5 px-2 rounded text-[11px] hover:bg-white/5"
                     style={{ color: '#9ca3af' }}
                     onClick={() => {
-                      setSelectedId(doc.id);
+                      handleSelectDoc(doc);
                       setSearchQuery('');
                     }}
                   >
@@ -324,20 +585,17 @@ export default function KnowledgePage() {
                   </p>
                 )}
               </div>
-            ) : (
-              renderTree(knowledgeTree)
-            )}
+            ) : vaultInfo ? (
+              renderTree(vaultInfo.tree)
+            ) : null}
           </div>
 
           {/* 底部统计 */}
-          <div className="px-3 py-2 border-t flex items-center gap-3 text-[9px] flex-shrink-0" style={{ borderColor: 'rgba(0,240,255,0.08)', color: '#666' }}>
+          <div className="px-3 py-2 border-t flex items-center justify-between text-[9px] flex-shrink-0" style={{ borderColor: 'rgba(0,240,255,0.08)', color: '#666' }}>
+            <span>自动刷新 30s</span>
             <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sourceColor.obsidian }} />
-              Obsidian
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sourceColor['llm-wiki'] }} />
-              LLM Wiki
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#00f0ff' }} />
+              已连接
             </span>
           </div>
         </div>
@@ -349,7 +607,6 @@ export default function KnowledgePage() {
         >
           {selectedDoc ? (
             <>
-              {/* 文档头部 */}
               <div className="px-5 py-3 border-b flex-shrink-0" style={{ borderColor: 'rgba(0,240,255,0.08)' }}>
                 <div className="flex items-start justify-between">
                   <div>
@@ -357,68 +614,56 @@ export default function KnowledgePage() {
                       {selectedDoc.name}
                     </h2>
                     <div className="flex items-center gap-3 mt-1.5 text-[10px]" style={{ color: '#666' }}>
-                      {selectedDoc.source && (
-                        <span
-                          className="px-1.5 py-0.5 rounded flex items-center gap-1"
-                          style={{ background: `${sourceColor[selectedDoc.source]}15`, color: sourceColor[selectedDoc.source] }}
-                        >
-                          {selectedDoc.source === 'obsidian' ? <FileCode size={9} /> : <Network size={9} />}
-                          {sourceLabel[selectedDoc.source]}
-                        </span>
-                      )}
+                      <span className="px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background: 'rgba(124,58,237,0.15)', color: '#7c3aed' }}>
+                        <FileText size={9} />
+                        Obsidian
+                      </span>
                       {selectedDoc.updatedAt && (
                         <span className="flex items-center gap-1">
                           <Clock size={9} />
-                          {selectedDoc.updatedAt}
+                          {new Date(selectedDoc.updatedAt).toLocaleString('zh-CN')}
                         </span>
                       )}
-                      {selectedDoc.tags && selectedDoc.tags.length > 0 && (
-                        <span className="flex items-center gap-1">
-                          <Tag size={9} />
-                          {selectedDoc.tags.join(', ')}
-                        </span>
+                      {selectedDoc.size && <span>{(selectedDoc.size / 1024).toFixed(1)} KB</span>}
+                      {editing && (
+                        <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,240,255,0.15)', color: '#00f0ff' }}>编辑中</span>
                       )}
                     </div>
                   </div>
+                  {canWrite && !editing && (
+                    <div className="flex items-center gap-1">
+                      <motion.button className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleStartEdit}>
+                        <Pencil size={10} />编辑
+                      </motion.button>
+                      <motion.button className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: 'rgba(255,42,109,0.1)', border: '1px solid rgba(255,42,109,0.2)', color: '#ff2a6d' }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { if (window.confirm(`确定要删除 "${selectedDoc.name}" 吗？`)) handleDeleteFile(); }}>
+                        <Trash2 size={10} />删除
+                      </motion.button>
+                    </div>
+                  )}
+                  {editing && (
+                    <div className="flex items-center gap-1">
+                      <motion.button className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: 'rgba(0,240,255,0.15)', border: '1px solid rgba(0,240,255,0.3)', color: '#00f0ff' }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleSaveEdit} disabled={saving}>
+                        <Check size={10} />{saving ? '保存中…' : '保存'}
+                      </motion.button>
+                      <motion.button className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ background: 'rgba(100,100,100,0.15)', border: '1px solid rgba(100,100,100,0.2)', color: '#9ca3af' }} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleCancelEdit} disabled={saving}>
+                        <X size={10} />取消
+                      </motion.button>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* 文档内容 */}
-              <div className="flex-1 overflow-y-auto px-5 py-4">
-                <pre
-                  className="text-[12px] leading-relaxed whitespace-pre-wrap font-sans"
-                  style={{ color: '#e0e0e0' }}
-                >
-                  {selectedDoc.content || '（此文档暂无内容预览）'}
-                </pre>
-
-                {/* 链接列表 */}
-                {selectedDoc.links && selectedDoc.links.length > 0 && (
-                  <div className="mt-6 pt-4 border-t" style={{ borderColor: 'rgba(0,240,255,0.08)' }}>
-                    <p className="text-[10px] mb-2 flex items-center gap-1" style={{ color: '#666' }}>
-                      <Link2 size={10} />
-                      相关链接
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedDoc.links.map((link) => {
-                        const linkedDoc = findDoc(knowledgeTree, link);
-                        return (
-                          <button
-                            key={link}
-                            className="px-2 py-1 rounded text-[10px] flex items-center gap-1 transition-colors"
-                            style={{
-                              background: 'rgba(0,240,255,0.05)',
-                              border: '1px solid rgba(0,240,255,0.15)',
-                              color: '#00f0ff',
-                            }}
-                            onClick={() => linkedDoc && setSelectedId(link)}
-                          >
-                            <FileText size={9} />
-                            {linkedDoc?.name || link}
-                          </button>
-                        );
-                      })}
-                    </div>
+              <div className="flex-1 overflow-y-auto px-5 py-4" style={{ color: '#e0e0e0' }}>
+                {editing ? (
+                  <textarea ref={editRef} value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full h-full bg-transparent outline-none resize-none text-xs font-mono leading-relaxed" style={{ color: '#e0e0e0' }} disabled={saving} />
+                ) : (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      urlTransform={(url) => { const t = url.trim(); if (/^(javascript|data|vbscript):/i.test(t)) return ''; return t; }}
+                    >
+                      {selectedDoc.content || '（此文档暂无内容）'}
+                    </ReactMarkdown>
                   </div>
                 )}
               </div>

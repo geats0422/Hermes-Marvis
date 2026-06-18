@@ -90,3 +90,122 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 240, 255, 0.5);
 }
+
+/* Markdown 渲染样式 */
+.prose {
+  line-height: 1.75;
+}
+.prose h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #ffd700;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+  padding-bottom: 0.3em;
+}
+.prose h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  color: #00f0ff;
+}
+.prose h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  color: #e0e0e0;
+}
+.prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose a {
+  color: #00f0ff;
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 240, 255, 0.3);
+}
+.prose a:hover {
+  text-decoration-color: #00f0ff;
+}
+.prose ul, .prose ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+.prose ul {
+  list-style-type: disc;
+}
+.prose ol {
+  list-style-type: decimal;
+}
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+.prose blockquote {
+  border-left: 3px solid #ffd700;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  color: #9ca3af;
+  font-style: italic;
+}
+.prose code {
+  background: rgba(0, 240, 255, 0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+.prose pre {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose th, .prose td {
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.prose th {
+  background: rgba(0, 240, 255, 0.08);
+  font-weight: 600;
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid rgba(0, 240, 255, 0.15);
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+.prose img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose strong {
+  color: #ffd700;
+  font-weight: 600;
+}
+.prose em {
+  color: #00f0ff;
+  font-style: italic;
+}

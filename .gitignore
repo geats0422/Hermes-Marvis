@@ -28,6 +28,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Python
+__pycache__
+*.pyc
+
 # Environment
 .env
 .env.local

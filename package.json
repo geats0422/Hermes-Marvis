@@ -4,16 +4,21 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"vite\" \"node scripts/obsidian-server.js \\\"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\\\"\" \"wsl -d Ubuntu-22.04 -- bash -c \\\"python3 '/mnt/c/work/Huanyu Hub/Hermes-Marvis/scripts/cron-server.py'\\\"\"",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "lint": "eslint src/**/*.{ts,tsx}",
+    "preview": "vite preview",
+    "obsidian": "node scripts/start-obsidian.js \"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\""
   },
   "dependencies": {
+    "concurrently": "^10.0.3",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
