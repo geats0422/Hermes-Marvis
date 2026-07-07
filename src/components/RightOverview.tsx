@@ -6,7 +6,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Agent } from '../data';
-import { Activity, Users, Zap, Clock, TrendingUp, Award, PanelRightClose, PanelRightOpen, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Users, Zap, Clock, TrendingUp, Award, PanelRightClose, PanelRightOpen, Wifi, WifiOff, Coins, Cpu } from 'lucide-react';
 import { useHermesHealth } from '../hooks/useHermes';
 import { useHermesStats } from '../hooks/useHermesStats';
 
@@ -18,7 +18,7 @@ interface RightOverviewProps {
 }
 
 export default function RightOverview({ agents, entryDone, collapsed, onToggle }: RightOverviewProps) {
-  const { online } = useHermesHealth();
+  const { online, detailed } = useHermesHealth();
   const { stats } = useHermesStats();
   const onlineCount = agents.filter((a) => a.status === 'online').length;
   const busyCount = agents.filter((a) => a.status === 'busy').length;
@@ -47,6 +47,30 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
       value: stats.todayMessages,
       suffix: '条',
       icon: TrendingUp,
+      color: '#39ff14',
+      bg: 'rgba(57,255,20,0.08)',
+    },
+    {
+      label: 'Token 用量',
+      value: ((stats.totalInputTokens + stats.totalOutputTokens) / 1000).toFixed(1),
+      suffix: 'k',
+      icon: Cpu,
+      color: '#00f0ff',
+      bg: 'rgba(0,240,255,0.08)',
+    },
+    {
+      label: '预估费用',
+      value: stats.totalCost.toFixed(4),
+      suffix: '$',
+      icon: Coins,
+      color: '#ffd700',
+      bg: 'rgba(255,215,0,0.08)',
+    },
+    {
+      label: '工具调用',
+      value: stats.totalToolCalls,
+      suffix: '次',
+      icon: Activity,
       color: '#39ff14',
       bg: 'rgba(57,255,20,0.08)',
     },
@@ -140,7 +164,17 @@ export default function RightOverview({ agents, entryDone, collapsed, onToggle }
                 </div>
                 <div className="flex items-center gap-1.5 mr-3">
                   {online ? <Wifi size={12} color="#00f0ff" /> : <WifiOff size={12} color="#666" />}
-                  <span className="text-[10px]" style={{ color: online ? '#00f0ff' : '#666' }}>{online ? '已连接' : '未连接'}</span>
+                  <span className="text-[10px]" style={{ color: online ? '#00f0ff' : '#666' }}>
+                    {online ? '已连接' : '未连接'}
+                  </span>
+                  {detailed && online && (
+                    <span className="text-[9px] px-1 py-0.5 rounded" style={{
+                      background: detailed.gateway_busy ? 'rgba(255,215,0,0.1)' : 'rgba(57,255,20,0.08)',
+                      color: detailed.gateway_busy ? '#ffd700' : '#39ff14',
+                    }}>
+                      {detailed.gateway_busy ? '忙碌' : '空闲'}
+                    </span>
+                  )}
                 </div>
                 {/* 折叠按钮 — 标题行内部右侧，明显位置 */}
                 <motion.button

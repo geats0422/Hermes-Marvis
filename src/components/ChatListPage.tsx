@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Trash2, Plus, SendHorizontal, Square, ArrowLeft, Clock, X, Image as ImageIcon, FileCode, FileText } from 'lucide-react';
+import { MessageSquare, Trash2, Plus, SendHorizontal, Square, ArrowLeft, Clock, X, Image as ImageIcon, FileCode, FileText, Wrench } from 'lucide-react';
 import { useSessions, useChat, useHermesHealth } from '../hooks/useHermes';
 import { useAttachments } from '../hooks/useAttachments';
 import type { AgentChatContext } from '../types/hermes';
@@ -71,6 +71,19 @@ export default function ChatListPage() {
                     ))}
                   </div>
                 )}
+                {msg.toolEvents && msg.toolEvents.length > 0 && msg.streaming && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {msg.toolEvents.slice(-3).map((ev, i) => (
+                      <span key={i} className="text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1" style={{
+                        background: ev.type === 'failed' ? 'rgba(255,42,109,0.1)' : ev.type === 'completed' ? 'rgba(57,255,20,0.08)' : 'rgba(0,240,255,0.08)',
+                        color: ev.type === 'failed' ? '#ff2a6d' : ev.type === 'completed' ? '#39ff14' : '#00f0ff',
+                      }}>
+                        <Wrench size={8} />
+                        {ev.type === 'started' ? '调用' : ev.type === 'completed' ? '完成' : '失败'} {ev.toolName}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {msg.streaming && !msg.text ? (
                   <div className="flex items-center gap-1.5 py-1">
                     <div className="flex gap-1">
@@ -78,7 +91,9 @@ export default function ChatListPage() {
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ffd700', animation: 'breathe 1.4s ease-in-out 0.2s infinite' }} />
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ffd700', animation: 'breathe 1.4s ease-in-out 0.4s infinite' }} />
                     </div>
-                    <span className="text-[10px]" style={{ color: '#ffd700' }}>思考中…</span>
+                    <span className="text-[10px]" style={{ color: '#ffd700' }}>
+                      {msg.toolEvents && msg.toolEvents.length > 0 ? '执行工具中…' : '思考中…'}
+                    </span>
                   </div>
                 ) : (
                   <div className="whitespace-pre-wrap">
@@ -216,6 +231,14 @@ export default function ChatListPage() {
             <div className="flex items-center gap-3 mt-1.5 ml-4">
               <span className="text-[10px] flex items-center gap-1" style={{ color: '#666' }}><Clock size={10} />{new Date(session.last_active * 1000).toLocaleString('zh-CN')}</span>
               <span className="text-[10px]" style={{ color: '#444' }}>{session.message_count} 条消息</span>
+              {(session.input_tokens > 0 || session.output_tokens > 0) && (
+                <span className="text-[10px]" style={{ color: '#444' }}>
+                  {((session.input_tokens + session.output_tokens) / 1000).toFixed(1)}k tokens
+                </span>
+              )}
+              {session.estimated_cost_usd != null && session.estimated_cost_usd > 0 && (
+                <span className="text-[10px]" style={{ color: '#444' }}>${session.estimated_cost_usd.toFixed(4)}</span>
+              )}
             </div>
           </motion.div>
         ))}

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"node scripts/obsidian-server.js \\\"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\\\"\" \"wsl -d Ubuntu-22.04 -- bash -c \\\"python3 '/mnt/c/work/Huanyu Hub/Hermes-Marvis/scripts/cron-server.py'\\\"\"",
+    "dev": "concurrently \"vite\" \"node scripts/obsidian-server.js \\\"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\\\"\"",
     "build": "tsc -b && vite build",
     "lint": "eslint src/**/*.{ts,tsx}",
     "preview": "vite preview",

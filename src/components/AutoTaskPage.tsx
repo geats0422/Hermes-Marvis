@@ -413,11 +413,7 @@ function CreateJobModal({ open, onClose, onSuccess }: { open: boolean; onClose: 
     setSubmitting(true);
     setError(null);
     try {
-      const result = await createCronJob({ name, prompt, schedule, deliver });
-      if (!result.ok) {
-        setError(result.error || result.stderr || '创建失败');
-        return;
-      }
+      await createCronJob({ name, prompt, schedule, deliver });
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : '创建失败');

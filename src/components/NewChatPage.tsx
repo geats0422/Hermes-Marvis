@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, SendHorizontal, Square, ArrowUp, Plane, Cpu, Presentation, Receipt, BookOpen, Film, X, FileText, Image as ImageIcon, FileCode, ArrowLeft } from 'lucide-react';
+import { Plus, SendHorizontal, Square, ArrowUp, Plane, Cpu, Presentation, Receipt, BookOpen, Film, X, FileText, Image as ImageIcon, FileCode, ArrowLeft, Wrench } from 'lucide-react';
 import { useChat, useHermesHealth } from '../hooks/useHermes';
 import { useAttachments, formatSize } from '../hooks/useAttachments';
 import type { AgentChatContext } from '../types/hermes';
@@ -116,6 +116,19 @@ export default function NewChatPage() {
                     ))}
                   </div>
                 )}
+                {msg.toolEvents && msg.toolEvents.length > 0 && msg.streaming && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {msg.toolEvents.slice(-3).map((ev, i) => (
+                      <span key={i} className="text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1" style={{
+                        background: ev.type === 'failed' ? 'rgba(255,42,109,0.1)' : ev.type === 'completed' ? 'rgba(57,255,20,0.08)' : 'rgba(0,240,255,0.08)',
+                        color: ev.type === 'failed' ? '#ff2a6d' : ev.type === 'completed' ? '#39ff14' : '#00f0ff',
+                      }}>
+                        <Wrench size={8} />
+                        {ev.type === 'started' ? '调用' : ev.type === 'completed' ? '完成' : '失败'} {ev.toolName}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {msg.streaming && !msg.text ? (
                   <div className="flex items-center gap-1.5 py-1">
                     <div className="flex gap-1">
@@ -123,7 +136,9 @@ export default function NewChatPage() {
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ffd700', animation: 'breathe 1.4s ease-in-out 0.2s infinite' }} />
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ffd700', animation: 'breathe 1.4s ease-in-out 0.4s infinite' }} />
                     </div>
-                    <span className="text-[10px]" style={{ color: '#ffd700' }}>思考中…</span>
+                    <span className="text-[10px]" style={{ color: '#ffd700' }}>
+                      {msg.toolEvents && msg.toolEvents.length > 0 ? '执行工具中…' : '思考中…'}
+                    </span>
                   </div>
                 ) : (
                   <div className="whitespace-pre-wrap">

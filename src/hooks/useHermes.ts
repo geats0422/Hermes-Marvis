@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { HermesSession, ChatMessage, AgentChatContext } from '../types/hermes';
-import { checkHealth, getSessions, createSession, getSessionMessages, deleteSession, sendChat } from '../api/hermes';
+import { checkHealth, getHealthDetailed, getSessions, createSession, getSessionMessages, deleteSession, sendChat } from '../api/hermes';
+import type { HermesHealthDetailed } from '../types/hermes';
 
 export function useHermesHealth() {
   const [online, setOnline] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [detailed, setDetailed] = useState<HermesHealthDetailed | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -14,13 +16,17 @@ export function useHermesHealth() {
         setOnline(!!result);
         setChecking(false);
       }
+      if (result) {
+        const detail = await getHealthDetailed();
+        if (mounted) setDetailed(detail);
+      }
     };
     poll();
     const interval = setInterval(poll, 30000);
     return () => { mounted = false; clearInterval(interval); };
   }, []);
 
-  return { online, checking };
+  return { online, checking, detailed };
 }
 
 export function useSessions() {
@@ -31,8 +37,8 @@ export function useSessions() {
     try {
       const data = await getSessions();
       setSessions(data);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[useSessions] refresh failed:', err);
     } finally {
       setLoading(false);
     }
@@ -148,19 +154,43 @@ export function useChat(ctx: AgentChatContext) {
       await sendChat(
         sid,
         text,
-        (fullText) => {
-          setMessages((prev) =>
-            prev.map((m) => m.id === agentMsgId ? { ...m, text: fullText } : m),
-          );
+        {
+          onChunk: (fullText) => {
+            setMessages((prev) =>
+              prev.map((m) => m.id === agentMsgId ? { ...m, text: fullText } : m),
+            );
+          },
+          onReasoning: (delta) => {
+            setMessages((prev) =>
+              prev.map((m) => m.id === agentMsgId
+                ? { ...m, reasoning: (m.reasoning || '') + delta }
+                : m),
+            );
+          },
+          onToolEvent: (event) => {
+            setMessages((prev) =>
+              prev.map((m) => m.id === agentMsgId
+                ? { ...m, toolEvents: [...(m.toolEvents || []), event] }
+                : m),
+            );
+          },
+          onError: (errMsg) => {
+            setMessages((prev) =>
+              prev.map((m) => m.id === agentMsgId
+                ? { ...m, text: `错误: ${errMsg}`, streaming: false }
+                : m),
+            );
+          },
+          onDone: () => {
+            streamingRef.current = false;
+            setMessages((prev) =>
+              prev.map((m) => m.id === agentMsgId ? { ...m, streaming: false } : m),
+            );
+            setLoading(false);
+            abortRef.current = null;
+          },
         },
-        () => {
-          streamingRef.current = false;
-          setMessages((prev) =>
-            prev.map((m) => m.id === agentMsgId ? { ...m, streaming: false } : m),
-          );
-          setLoading(false);
-          abortRef.current = null;
-        },
+        undefined,
         attachments,
         abortRef.current.signal,
       );
