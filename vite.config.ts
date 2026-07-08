@@ -38,7 +38,7 @@ export default defineConfig({
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: blob:",
-        "connect-src 'self' http://localhost:8642 http://localhost:8643 http://localhost:8644 ws:",
+        "connect-src 'self' http://localhost:8642 http://localhost:8643 http://localhost:8644 http://localhost:8645 ws:",
         "frame-ancestors 'none'",
       ].join('; '),
     },
@@ -46,6 +46,10 @@ export default defineConfig({
       '/api': { target: hermesTarget, ...hermesProxy() },
       '/health': { target: hermesTarget, ...hermesProxy() },
       '/v1': { target: hermesTarget, ...hermesProxy() },
+      '/profile-api': {
+        target: 'http://127.0.0.1:8645',
+        rewrite: (path) => path.replace(/^\/profile-api/, ''),
+      },
       '/obsidian-api': {
         target: 'http://127.0.0.1:8643',
         rewrite: (path) => path.replace(/^\/obsidian-api/, ''),
