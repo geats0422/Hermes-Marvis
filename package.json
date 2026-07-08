@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"node scripts/obsidian-server.js \\\"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\\\"\" \"node scripts/profile-server.js\",
+    "dev": "concurrently \"vite\" \"node scripts/obsidian-server.js \\\"C:\\work\\Huanyu Hub\\Huanyu-Knowledge\\\"\" \"node scripts/profile-server.js\"",
     "build": "tsc -b && vite build",
     "lint": "eslint src/**/*.{ts,tsx}",
     "preview": "vite preview",
