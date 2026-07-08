@@ -36,3 +36,6 @@ __pycache__
 .env
 .env.local
 .env.*.local
+
+# opencode IDE state (skills/ is tracked)
+.opencode/state/

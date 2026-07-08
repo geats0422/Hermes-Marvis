@@ -16,11 +16,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers: { ...headers, ...options.headers },
   });
+  const text = await res.text().catch(() => '');
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
     throw new Error(`Settings API ${res.status}: ${text || res.statusText}`);
   }
-  return res.json();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.slice(0, 80).replace(/\s+/g, ' ');
+    throw new Error(`Settings API returned non-JSON response (${res.status}): ${preview}`);
+  }
 }
 
 export async function getSettingsOverview(): Promise<SettingsOverview> {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Settings, Brain, Bot, Shield,
-  Moon, Languages, Key,
+  Moon, Key,
   Cpu, Eye, Zap, RefreshCw, HardDrive, Lock,
   Activity, Globe, ChevronRight, Sparkles,
   Server, Bell, Volume2, Heart, ShieldAlert,
@@ -215,7 +215,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 ) : (
                   <AnimatePresence mode="wait">
                     <motion.div key={activeSection} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}>
-                      {activeSection === 'ai' && <AISection model={model} providers={overview?.providers || { configured: [], available: [] }} onOpenProviders={() => setShowProviderModal(true)} />}
+                      {activeSection === 'ai' && <AISection model={model} providers={overview?.providers || { configured: [], available: [] }} onOpenProviders={() => setShowProviderModal(true)} onSaveConfig={saveConfig} />}
                       {activeSection === 'general' && <GeneralSection display={display} tts={tts} marvis={marvis} skinOptions={overview?.skin_options || []} ttsProviders={overview?.tts_providers || []} ttsVoices={overview?.tts_voices || {}} onSaveConfig={saveConfig} onSaveMarvis={saveMarvis} />}
                       {activeSection === 'agent' && <AgentSection delegation={delegation} memory={memory} marvis={marvis} onSaveConfig={saveConfig} onSaveMarvis={saveMarvis} />}
                       {activeSection === 'system' && <SystemSection dashboard={dashboard} gateway={gateway} mcpServers={mcpServers} onSaveConfig={saveConfig} onSaveMarvis={saveMarvis} onRefresh={loadSettings} />}
@@ -238,11 +238,22 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   );
 }
 
-function AISection({ model, providers, onOpenProviders }: {
+function AISection({ model, providers, onOpenProviders, onSaveConfig }: {
   model: HermesModelConfig;
-  providers: { configured: { id: string; name: string }[]; available: { id: string; name: string }[] };
+  providers: { configured: { id: string; name: string; default_model: string; base_url: string | null; source: string }[]; available: { id: string; name: string }[] };
   onOpenProviders: () => void;
+  onSaveConfig: (u: Record<string, unknown>) => Promise<void>;
 }) {
+  const switchTo = (providerId: string) => {
+    const p = providers.configured.find((c) => c.id === providerId);
+    if (!p) return;
+    onSaveConfig({
+      'model.provider': p.id,
+      'model.default': p.default_model || model.default || '',
+      'model.base_url': p.base_url || '',
+    });
+  };
+
   return (
     <div className="space-y-3">
       <div className="rounded-lg p-3 border" style={{ borderColor: 'rgba(255,215,0,0.2)', background: 'rgba(255,215,0,0.04)' }}>
@@ -254,7 +265,22 @@ function AISection({ model, providers, onOpenProviders }: {
       </div>
 
       <SettingRow icon={Brain} label="调度模型" desc={`当前: ${model.default || '未设置'} (${model.provider || 'default'})`}>
-        <span className="text-[10px] font-mono" style={{ color: '#00f0ff' }}>{model.default || '—'}</span>
+        {providers.configured.length > 0 ? (
+          <select
+            className="px-2 py-1 rounded text-[10px] outline-none cursor-pointer"
+            style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }}
+            value={model.provider || ''}
+            onChange={(e) => switchTo(e.target.value)}
+          >
+            {providers.configured.map((p) => (
+              <option key={p.id} value={p.id} style={{ background: '#0a0a0f' }}>
+                {p.name} — {p.default_model || '?'}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[10px] font-mono" style={{ color: '#666' }}>无可用 Provider</span>
+        )}
       </SettingRow>
 
       <SettingRow icon={Key} label="已连接 Provider" desc={`${providers.configured.length} 个已配置`}>
@@ -292,7 +318,6 @@ function GeneralSection({ display, tts, marvis, skinOptions, ttsProviders, ttsVo
   onSaveMarvis: (u: Partial<MarvisSettings>) => Promise<void>;
 }) {
   const currentSkin = display.skin || 'default';
-  const currentLang = display.language || 'en';
   const currentTtsProvider = tts.provider || 'edge';
   const currentTtsVoice = (tts as Record<string, Record<string, string>>)[currentTtsProvider]?.voice || '';
 
@@ -307,18 +332,6 @@ function GeneralSection({ display, tts, marvis, skinOptions, ttsProviders, ttsVo
           onChange={(e) => onSaveConfig({ 'display.skin': e.target.value })}
         >
           {skinOptions.map((s) => <option key={s} value={s} style={{ background: '#0a0a0f' }}>{s}</option>)}
-        </select>
-      </SettingRow>
-      <SettingRow icon={Languages} label="语言" desc={`当前: ${currentLang}`}>
-        <select
-          className="px-2 py-1 rounded text-[10px] outline-none cursor-pointer"
-          style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0,240,255,0.2)', color: '#00f0ff' }}
-          value={currentLang}
-          onChange={(e) => onSaveConfig({ 'display.language': e.target.value })}
-        >
-          <option value="zh" style={{ background: '#0a0a0f' }}>简体中文</option>
-          <option value="en" style={{ background: '#0a0a0f' }}>English</option>
-          <option value="ja" style={{ background: '#0a0a0f' }}>日本語</option>
         </select>
       </SettingRow>
 
@@ -460,19 +473,19 @@ function SystemSection({ dashboard, gateway, mcpServers, onSaveConfig, onSaveMar
       <SectionLabel label="网关状态" />
       <div className="rounded-lg p-3 border" style={{ borderColor: 'rgba(0,240,255,0.1)', background: 'rgba(0,0,0,0.3)' }}>
         <div className="flex items-center gap-2 mb-2">
-          <span className={`w-2 h-2 rounded-full`} style={{ background: gateway.running ? '#39ff14' : '#666', boxShadow: gateway.running ? '0 0 4px #39ff14' : 'none' }} />
-          <span className="text-[11px] font-bold" style={{ color: gateway.running ? '#39ff14' : '#666' }}>
-            {gateway.running ? '网关运行中' : '网关未运行'}
+          <span className={`w-2 h-2 rounded-full`} style={{ background: gateway.gateway_state === 'running' ? '#39ff14' : '#666', boxShadow: gateway.gateway_state === 'running' ? '0 0 4px #39ff14' : 'none' }} />
+          <span className="text-[11px] font-bold" style={{ color: gateway.gateway_state === 'running' ? '#39ff14' : '#666' }}>
+            {gateway.gateway_state === 'running' ? '网关运行中' : (gateway.gateway_state || '网关未运行')}
           </span>
         </div>
         {gateway.platforms && Object.entries(gateway.platforms).map(([name, plat]) => {
-          const p = plat as unknown as Record<string, boolean>;
+          const isConnected = plat.state === 'connected';
           return (
             <div key={name} className="flex items-center gap-2 py-1 text-[10px]" style={{ color: '#9ca3af' }}>
-              <span className={`w-1.5 h-1.5 rounded-full`} style={{ background: p.connected ? '#39ff14' : '#444' }} />
+              <span className={`w-1.5 h-1.5 rounded-full`} style={{ background: isConnected ? '#39ff14' : '#444' }} />
               <span>{name}</span>
-              <span className="ml-auto" style={{ color: p.connected ? '#39ff14' : '#666' }}>
-                {p.connected ? '已连接' : '未连接'}
+              <span className="ml-auto" style={{ color: isConnected ? '#39ff14' : '#666' }}>
+                {isConnected ? '已连接' : (plat.state || '未连接')}
               </span>
             </div>
           );

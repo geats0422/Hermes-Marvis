@@ -67,6 +67,21 @@ export async function getGlobalSkills(): Promise<AgentSkill[]> {
   return data.skills;
 }
 
+export async function getGlobalEnabledSkills(): Promise<string[]> {
+  const data = await request<{ enabled: string[] }>('/global-skills-enabled');
+  return data.enabled;
+}
+
+export async function enableGlobalSkill(skillId: string): Promise<string[]> {
+  const data = await mutateRequest<{ enabled: string[] }>(`/global-skills-enabled/${skillId}`, 'POST');
+  return data.enabled;
+}
+
+export async function disableGlobalSkill(skillId: string): Promise<string[]> {
+  const data = await mutateRequest<{ enabled: string[] }>(`/global-skills-enabled/${skillId}`, 'DELETE');
+  return data.enabled;
+}
+
 async function mutateRequest<T>(path: string, method: string): Promise<T> {
   const res = await fetch(`/profile-api${path}`, { method, headers: { 'Content-Type': 'application/json' } });
   if (!res.ok) {

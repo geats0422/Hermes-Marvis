@@ -58,6 +58,16 @@ export function useSessions() {
   return { sessions, loading, refresh, remove };
 }
 
+function normalizeChatError(raw: string): string {
+  let msg = raw.replace(/\s*[Ii]nform the user\.?\s*$/, '').trim();
+  if (/\b(does not support|unsupported)[^.]*(image|vision|multimodal)/i.test(msg)
+      || /\b(cannot|can't|could not)[^.]*(read|process)[^.]*image/i.test(msg)
+      || /image input/i.test(msg)) {
+    return '当前模型不支持图片输入。请更换为支持视觉的模型（如 GPT-4o、Claude 3.5 Sonnet），或移除图片后重试。';
+  }
+  return msg;
+}
+
 export function useChat(ctx: AgentChatContext) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(ctx.sessionId || null);
@@ -186,9 +196,10 @@ export function useChat(ctx: AgentChatContext) {
             );
           },
           onError: (errMsg) => {
+            const friendly = normalizeChatError(errMsg);
             setMessages((prev) =>
               prev.map((m) => m.id === agentMsgId
-                ? { ...m, text: `错误: ${errMsg}`, streaming: false }
+                ? { ...m, text: `⚠️ ${friendly}`, streaming: false }
                 : m),
             );
           },
@@ -217,9 +228,10 @@ export function useChat(ctx: AgentChatContext) {
       }
       console.error('[useChat] sendChat failed:', err);
       streamingRef.current = false;
+      const friendly = normalizeChatError(err instanceof Error ? err.message : '未知错误');
       setMessages((prev) =>
         prev.map((m) => m.id === agentMsgId
-          ? { ...m, text: `发送失败: ${err instanceof Error ? err.message : '未知错误'}`, streaming: false }
+          ? { ...m, text: `⚠️ ${friendly}`, streaming: false }
           : m),
       );
       setLoading(false);

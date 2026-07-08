@@ -13,6 +13,7 @@ import {
   RefreshCw, Wifi, WifiOff, Layers,
 } from 'lucide-react';
 import { getSkills, getToolsets } from '../api/hermes';
+import { getGlobalEnabledSkills, enableGlobalSkill, disableGlobalSkill } from '../api/profile';
 import type { HermesSkill, HermesToolset } from '../types/hermes';
 
 type ViewMode = 'skills' | 'toolsets';
@@ -88,6 +89,12 @@ export default function SkillsPage() {
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
+  useEffect(() => {
+    getGlobalEnabledSkills()
+      .then((ids) => setAdded(new Set(ids)))
+      .catch(() => setAdded(new Set()));
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
       const [skillsResult, toolsetsResult] = await Promise.allSettled([
@@ -149,13 +156,25 @@ export default function SkillsPage() {
     return result;
   }, [toolsets, searchQuery]);
 
-  const handleToggleAdd = (id: string) => {
+  const handleToggleAdd = async (id: string) => {
+    const wasAdded = added.has(id);
     setAdded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
+      if (wasAdded) next.delete(id);
       else next.add(id);
       return next;
     });
+    try {
+      const updated = wasAdded ? await disableGlobalSkill(id) : await enableGlobalSkill(id);
+      setAdded(new Set(updated));
+    } catch {
+      setAdded((prev) => {
+        const next = new Set(prev);
+        if (wasAdded) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    }
   };
 
   if (loading) {

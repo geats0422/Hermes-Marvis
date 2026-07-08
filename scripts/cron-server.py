@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -45,7 +46,7 @@ from urllib.parse import urlparse, parse_qs
 import yaml
 
 PORT = 8644
-HERMES = os.path.expanduser("~/.local/bin/hermes")
+HERMES = shutil.which("hermes") or os.path.expanduser("~/.local/bin/hermes")
 HOME = os.path.expanduser("~")
 HERMES_HOME = os.path.expanduser("~/.hermes")
 CONFIG_PATH = os.path.join(HERMES_HOME, "config.yaml")
@@ -75,23 +76,23 @@ MARVIS_SETTINGS_DEFAULTS = {
 }
 
 PROVIDER_CATALOG = [
-    {"id": "openai", "name": "OpenAI", "key_env": "OPENAI_API_KEY", "base_url_env": "OPENAI_BASE_URL", "docs_url": "https://platform.openai.com/api-keys"},
-    {"id": "anthropic", "name": "Anthropic", "key_env": "ANTHROPIC_API_KEY", "base_url_env": "ANTHROPIC_BASE_URL", "docs_url": "https://console.anthropic.com/"},
-    {"id": "openrouter", "name": "OpenRouter", "key_env": "OPENROUTER_API_KEY", "base_url_env": None, "docs_url": "https://openrouter.ai/keys"},
-    {"id": "google", "name": "Google AI Studio", "key_env": "GOOGLE_API_KEY", "base_url_env": "GEMINI_BASE_URL", "docs_url": "https://aistudio.google.com/app/apikey"},
-    {"id": "gemini", "name": "Gemini", "key_env": "GEMINI_API_KEY", "base_url_env": "GEMINI_BASE_URL", "docs_url": "https://aistudio.google.com/app/apikey"},
-    {"id": "deepseek", "name": "DeepSeek", "key_env": "DEEPSEEK_API_KEY", "base_url_env": "DEEPSEEK_BASE_URL", "docs_url": "https://platform.deepseek.com/api_keys"},
-    {"id": "minimax", "name": "MiniMax", "key_env": "MINIMAX_API_KEY", "base_url_env": "MINIMAX_BASE_URL", "docs_url": "https://www.minimax.io/"},
-    {"id": "minimax-cn", "name": "MiniMax (China)", "key_env": "MINIMAX_CN_API_KEY", "base_url_env": "MINIMAX_CN_BASE_URL", "docs_url": "https://www.minimaxi.com/"},
-    {"id": "xai", "name": "xAI Grok", "key_env": "XAI_API_KEY", "base_url_env": "XAI_BASE_URL", "docs_url": "https://console.x.ai/"},
-    {"id": "nvidia", "name": "NVIDIA NIM", "key_env": "NVIDIA_API_KEY", "base_url_env": "NVIDIA_BASE_URL", "docs_url": "https://build.nvidia.com/"},
-    {"id": "lmstudio", "name": "LM Studio", "key_env": "LM_API_KEY", "base_url_env": "LM_BASE_URL", "docs_url": None},
-    {"id": "glm", "name": "Z.AI / GLM", "key_env": "GLM_API_KEY", "base_url_env": "GLM_BASE_URL", "docs_url": "https://z.ai/"},
-    {"id": "kimi", "name": "Kimi / Moonshot", "key_env": "KIMI_API_KEY", "base_url_env": "KIMI_BASE_URL", "docs_url": "https://platform.moonshot.cn/"},
-    {"id": "kimi-cn", "name": "Kimi (China)", "key_env": "KIMI_CN_API_KEY", "base_url_env": None, "docs_url": "https://platform.moonshot.cn/"},
-    {"id": "stepfun", "name": "StepFun", "key_env": "STEPFUN_API_KEY", "base_url_env": "STEPFUN_BASE_URL", "docs_url": "https://platform.stepfun.com/"},
-    {"id": "arcee", "name": "Arcee AI", "key_env": "ARCEEAI_API_KEY", "base_url_env": "ARCEE_BASE_URL", "docs_url": "https://chat.arcee.ai/"},
-    {"id": "gmi", "name": "GMI Cloud", "key_env": "GMI_API_KEY", "base_url_env": "GMI_BASE_URL", "docs_url": "https://www.gmicloud.ai/"},
+    {"id": "openai", "name": "OpenAI", "key_env": "OPENAI_API_KEY", "base_url_env": "OPENAI_BASE_URL", "docs_url": "https://platform.openai.com/api-keys", "default_model": "gpt-4o-mini"},
+    {"id": "anthropic", "name": "Anthropic", "key_env": "ANTHROPIC_API_KEY", "base_url_env": "ANTHROPIC_BASE_URL", "docs_url": "https://console.anthropic.com/", "default_model": "claude-3-5-sonnet-20241022"},
+    {"id": "openrouter", "name": "OpenRouter", "key_env": "OPENROUTER_API_KEY", "base_url_env": None, "docs_url": "https://openrouter.ai/keys", "default_model": "openai/gpt-4o-mini"},
+    {"id": "google", "name": "Google AI Studio", "key_env": "GOOGLE_API_KEY", "base_url_env": "GEMINI_BASE_URL", "docs_url": "https://aistudio.google.com/app/apikey", "default_model": "gemini-2.0-flash"},
+    {"id": "gemini", "name": "Gemini", "key_env": "GEMINI_API_KEY", "base_url_env": "GEMINI_BASE_URL", "docs_url": "https://aistudio.google.com/app/apikey", "default_model": "gemini-2.0-flash"},
+    {"id": "deepseek", "name": "DeepSeek", "key_env": "DEEPSEEK_API_KEY", "base_url_env": "DEEPSEEK_BASE_URL", "docs_url": "https://platform.deepseek.com/api_keys", "default_model": "deepseek-chat"},
+    {"id": "minimax", "name": "MiniMax", "key_env": "MINIMAX_API_KEY", "base_url_env": "MINIMAX_BASE_URL", "docs_url": "https://www.minimax.io/", "default_model": "MiniMax-M3"},
+    {"id": "minimax-cn", "name": "MiniMax (China)", "key_env": "MINIMAX_CN_API_KEY", "base_url_env": "MINIMAX_CN_BASE_URL", "docs_url": "https://www.minimaxi.com/", "default_model": "MiniMax-M3"},
+    {"id": "xai", "name": "xAI Grok", "key_env": "XAI_API_KEY", "base_url_env": "XAI_BASE_URL", "docs_url": "https://console.x.ai/", "default_model": "grok-2"},
+    {"id": "nvidia", "name": "NVIDIA NIM", "key_env": "NVIDIA_API_KEY", "base_url_env": "NVIDIA_BASE_URL", "docs_url": "https://build.nvidia.com/", "default_model": "meta/llama-3.1-70b-instruct"},
+    {"id": "lmstudio", "name": "LM Studio", "key_env": "LM_API_KEY", "base_url_env": "LM_BASE_URL", "docs_url": None, "default_model": "local-model"},
+    {"id": "glm", "name": "Z.AI / GLM", "key_env": "GLM_API_KEY", "base_url_env": "GLM_BASE_URL", "docs_url": "https://z.ai/", "default_model": "glm-4-plus"},
+    {"id": "kimi", "name": "Kimi / Moonshot", "key_env": "KIMI_API_KEY", "base_url_env": "KIMI_BASE_URL", "docs_url": "https://platform.moonshot.cn/", "default_model": "moonshot-v1-8k"},
+    {"id": "kimi-cn", "name": "Kimi (China)", "key_env": "KIMI_CN_API_KEY", "base_url_env": None, "docs_url": "https://platform.moonshot.cn/", "default_model": "moonshot-v1-8k"},
+    {"id": "stepfun", "name": "StepFun", "key_env": "STEPFUN_API_KEY", "base_url_env": "STEPFUN_BASE_URL", "docs_url": "https://platform.stepfun.com/", "default_model": "step-1v-8k"},
+    {"id": "arcee", "name": "Arcee AI", "key_env": "ARCEEAI_API_KEY", "base_url_env": "ARCEE_BASE_URL", "docs_url": "https://chat.arcee.ai/", "default_model": "arcee"},
+    {"id": "gmi", "name": "GMI Cloud", "key_env": "GMI_API_KEY", "base_url_env": "GMI_BASE_URL", "docs_url": "https://www.gmicloud.ai/", "default_model": "gmi"},
 ]
 
 CREDENTIAL_PROBES = {
@@ -130,6 +131,9 @@ TTS_VOICES = {
 def _detach():
     if hasattr(os, "setsid"):
         os.setsid()
+
+
+_PREEXEC = {"preexec_fn": _detach} if os.name == "posix" else {}
 
 
 def run_hermes(*args, timeout=30):
@@ -253,7 +257,7 @@ def filter_config_for_client(cfg):
 def load_env_file():
     env = {}
     try:
-        with open(ENV_PATH, "r", encoding="utf-8") as f:
+        with open(ENV_PATH, "r", encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -270,7 +274,7 @@ def save_env_value(key, value):
         env = load_env_file()
         env[key] = value
         lines = [f"{k}={v}" for k, v in env.items()]
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
+        with open(ENV_PATH, "w", encoding="utf-8-sig") as f:
             f.write("\n".join(lines) + "\n")
 
 
@@ -280,7 +284,7 @@ def remove_env_value(key):
         if key in env:
             del env[key]
             lines = [f"{k}={v}" for k, v in env.items()]
-            with open(ENV_PATH, "w", encoding="utf-8") as f:
+            with open(ENV_PATH, "w", encoding="utf-8-sig") as f:
                 f.write("\n".join(lines) + "\n")
             return True
         return False
@@ -313,8 +317,11 @@ def save_marvis_settings(settings):
 
 def get_providers_status():
     env = load_env_file()
+    cfg = load_hermes_config()
+    cfg_providers = cfg.get("providers", {}) or {}
     configured = []
     available = []
+    seen_ids = set()
     for p in PROVIDER_CATALOG:
         key_val = env.get(p["key_env"], "")
         entry = {
@@ -326,10 +333,37 @@ def get_providers_status():
             "configured": bool(key_val),
             "redacted_key": _redact(key_val) if key_val else None,
             "base_url": env.get(p["base_url_env"], "") if p.get("base_url_env") else None,
+            "default_model": p.get("default_model", ""),
+            "source": "env",
         }
         if entry["configured"]:
             configured.append(entry)
         available.append(entry)
+        seen_ids.add(p["id"])
+
+    for pid, pcfg in cfg_providers.items():
+        if pid in seen_ids:
+            continue
+        if not isinstance(pcfg, dict):
+            continue
+        api_key = pcfg.get("api_key", "") or ""
+        base_url = pcfg.get("base_url", "") or ""
+        default_model = pcfg.get("default_model", "") or ""
+        entry = {
+            "id": pid,
+            "name": pid,
+            "key_env": None,
+            "base_url_env": None,
+            "docs_url": None,
+            "configured": True,
+            "redacted_key": _redact(api_key) if api_key else None,
+            "base_url": base_url or None,
+            "default_model": default_model,
+            "source": "config",
+        }
+        configured.append(entry)
+        available.append(entry)
+
     return {"configured": configured, "available": available}
 
 
@@ -471,7 +505,7 @@ def list_windows_drives():
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", ps_script],
             capture_output=True, timeout=20,
-            preexec_fn=_detach,
+            **_PREEXEC,
         )
         if result.returncode != 0 or not result.stdout:
             return []
@@ -495,7 +529,7 @@ def list_wsl_distros():
         result = subprocess.run(
             ["wsl.exe", "-l", "-v"],
             capture_output=True, timeout=20,
-            preexec_fn=_detach,
+            **_PREEXEC,
         )
         try:
             out = result.stdout.decode("utf-16le", errors="replace")
@@ -535,7 +569,7 @@ def list_wsl_filesystems():
             ["wsl.exe", "-d", "Ubuntu-22.04", "--", "bash", "-lc",
              "df -B1 -x tmpfs -x devtmpfs -x squashfs 2>/dev/null | tail -n +2"],
             capture_output=True, timeout=20,
-            preexec_fn=_detach,
+            **_PREEXEC,
         )
         if result.returncode != 0:
             return []

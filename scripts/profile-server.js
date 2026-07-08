@@ -7,8 +7,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = 8645;
 const HERMES_HOME = process.env.HERMES_HOME || 'C:\\Users\\kabuto\\.hermes';
+const HERMES_SOURCE_DIR = process.env.HERMES_SOURCE_DIR || 'C:\\work\\Huanyu Hub\\Hermes source\\hermes-agent';
 const PROFILES_DIR = path.join(HERMES_HOME, 'profiles');
 const MEMORIES_DIR = path.join(HERMES_HOME, 'memories');
+const GLOBAL_ENABLED_FILE = path.join(HERMES_HOME, 'marvis_global_skills.json');
 const ALLOWED_ORIGIN = process.env.PROFILE_ALLOWED_ORIGIN || 'http://localhost:5173';
 
 const AGENT_ID_MAP = {
@@ -87,6 +89,19 @@ function parseSkillDescription(dirPath) {
   if (!content) return null;
   const match = content.match(/description:\s*(.+)/);
   return match ? match[1].trim() : content.trim();
+}
+
+function loadGlobalEnabled() {
+  try {
+    const data = JSON.parse(fs.readFileSync(GLOBAL_ENABLED_FILE, 'utf-8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGlobalEnabled(skills) {
+  fs.writeFileSync(GLOBAL_ENABLED_FILE, JSON.stringify(skills, null, 2));
 }
 
 function listSkills(agentId) {
@@ -172,6 +187,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/global-skills-enabled') {
+    if (req.method === 'GET') {
+      json(res, 200, { enabled: loadGlobalEnabled() });
+      return;
+    }
+    json(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
+  if (url.pathname.startsWith('/global-skills-enabled/') && parts.length === 2) {
+    const skillId = parts[1];
+    if (!/^[a-zA-Z0-9._-]+$/.test(skillId)) {
+      json(res, 400, { error: 'Invalid skill id' });
+      return;
+    }
+    if (req.method === 'POST') {
+      const list = loadGlobalEnabled();
+      if (!list.includes(skillId)) {
+        list.push(skillId);
+        saveGlobalEnabled(list);
+      }
+      json(res, 200, { enabled: list });
+      return;
+    }
+    if (req.method === 'DELETE') {
+      const list = loadGlobalEnabled().filter((s) => s !== skillId);
+      saveGlobalEnabled(list);
+      json(res, 200, { enabled: list });
+      return;
+    }
+    json(res, 405, { error: 'Method not allowed' });
+    return;
+  }
+
   if (req.method === 'GET' && parts[0] === 'memories' && parts.length === 2) {
     const fileName = parts[1];
     if (!ALLOWED_MEMORY_FILES.has(fileName)) {
@@ -197,11 +246,6 @@ const server = http.createServer(async (req, res) => {
   if (parts.length >= 2 && isValidAgentId(parts[0])) {
     const agentId = parts[0];
     const resource = parts[1];
-
-    if (req.method !== 'GET') {
-      json(res, 405, { error: 'Method not allowed' });
-      return;
-    }
 
     const profileDir = getProfileDir(agentId);
     if (!fs.existsSync(profileDir)) {
@@ -230,9 +274,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (resource === 'skills' && parts.length === 3 && req.method !== 'GET') {
+    if (resource === 'skills' && parts.length === 3) {
+      if (req.method === 'GET') {
+        json(res, 405, { error: 'Method not allowed' });
+        return;
+      }
       const skillId = parts[2];
-      const globalSkillDir = path.join(HERMES_HOME, 'skills', skillId);
+      let globalSkillDir = path.join(HERMES_HOME, 'skills', skillId);
+      if (!fs.existsSync(globalSkillDir)) {
+        globalSkillDir = path.join(HERMES_SOURCE_DIR, 'skills', skillId);
+      }
       if (!fs.existsSync(globalSkillDir)) {
         json(res, 404, { error: 'Global skill not found' });
         return;
@@ -257,6 +308,8 @@ const server = http.createServer(async (req, res) => {
         json(res, 200, { enabled: false, skillId });
         return;
       }
+      json(res, 405, { error: 'Method not allowed' });
+      return;
     }
 
     if (resource === 'logs') {

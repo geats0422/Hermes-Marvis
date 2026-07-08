@@ -54,6 +54,9 @@ export default defineConfig({
         target: 'http://127.0.0.1:8643',
         rewrite: (path) => path.replace(/^\/obsidian-api/, ''),
       },
+      '/cron-api': {
+        target: 'http://127.0.0.1:8644',
+      },
     },
   },
 })

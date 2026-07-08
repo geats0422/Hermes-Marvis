@@ -17,12 +17,14 @@ export interface MarvisSettings {
 export interface ProviderEntry {
   id: string;
   name: string;
-  key_env: string;
+  key_env: string | null;
   base_url_env: string | null;
   docs_url: string | null;
   configured: boolean;
   redacted_key: string | null;
   base_url: string | null;
+  default_model: string;
+  source: 'env' | 'config';
 }
 
 export interface ProvidersStatus {
@@ -31,14 +33,21 @@ export interface ProvidersStatus {
 }
 
 export interface GatewayPlatform {
-  platform: string;
-  connected: boolean;
-  configured: boolean;
+  state: string;
+  error_code?: string | null;
+  error_message?: string | null;
+  updated_at?: string;
 }
 
 export interface GatewayStatus {
-  running: boolean;
+  pid?: number;
+  kind?: string;
+  gateway_state?: string;
+  exit_reason?: string | null;
+  restart_requested?: boolean;
+  active_agents?: number;
   platforms?: Record<string, GatewayPlatform>;
+  updated_at?: string;
   error?: string;
 }
 

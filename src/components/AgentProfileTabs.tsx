@@ -11,7 +11,8 @@ import type { Agent, Memory } from '../data';
 import type { ChatMessage } from '../types/hermes';
 import type { AgentMemoryMap } from '../hooks/useAgentMemory';
 import type { AgentProfileInfo, AgentSkill, AgentLogLine } from '../api/profile';
-import { getGlobalSkills, enableSkillForAgent, disableSkillForAgent } from '../api/profile';
+import { getGlobalSkills, enableSkillForAgent, disableSkillForAgent, getGlobalEnabledSkills } from '../api/profile';
+import { getSkills as getHermesSkills } from '../api/hermes';
 
 export type TabId = 'evolution' | 'skills' | 'runtime' | 'memory' | 'records' | 'config';
 
@@ -167,17 +168,42 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [toggling, setToggling] = useState<string | null>(null);
   const [globalLoading, setGlobalLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const agentSkillIds = new Set(skills.map((s) => s.id));
 
   const loadGlobalSkills = useCallback(async () => {
     setGlobalLoading(true);
+    setLoadError(null);
     try {
-      const gs = await getGlobalSkills();
+      const [hermesSkills, globalEnabled] = await Promise.all([
+        getHermesSkills(),
+        getGlobalEnabledSkills(),
+      ]);
+      const enabledSet = new Set(globalEnabled);
+      const gs: AgentSkill[] = hermesSkills
+        .filter((s) => enabledSet.has(s.name))
+        .map((s) => ({
+          id: s.name,
+          name: s.name,
+          description: s.description || '',
+        }));
       setGlobalSkills(gs);
       setEnabledIds(new Set(gs.filter((s) => agentSkillIds.has(s.id)).map((s) => s.id)));
-    } catch {
-      setGlobalSkills([]);
+    } catch (e) {
+      try {
+        const [gs, globalEnabled] = await Promise.all([
+          getGlobalSkills(),
+          getGlobalEnabledSkills(),
+        ]);
+        const enabledSet = new Set(globalEnabled);
+        const filtered = gs.filter((s) => enabledSet.has(s.id));
+        setGlobalSkills(filtered);
+        setEnabledIds(new Set(filtered.filter((s) => agentSkillIds.has(s.id)).map((s) => s.id)));
+      } catch {
+        setGlobalSkills([]);
+        setLoadError(e instanceof Error ? e.message : '加载技能列表失败');
+      }
     } finally {
       setGlobalLoading(false);
     }
@@ -188,15 +214,26 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
   const toggleSkill = async (skillId: string) => {
     if (toggling) return;
     setToggling(skillId);
+    const wasEnabled = enabledIds.has(skillId);
+    setEnabledIds((prev) => {
+      const n = new Set(prev);
+      if (wasEnabled) n.delete(skillId);
+      else n.add(skillId);
+      return n;
+    });
     try {
-      if (enabledIds.has(skillId)) {
+      if (wasEnabled) {
         await disableSkillForAgent(agent.id, skillId);
-        setEnabledIds((prev) => { const n = new Set(prev); n.delete(skillId); return n; });
       } else {
         await enableSkillForAgent(agent.id, skillId);
-        setEnabledIds((prev) => new Set(prev).add(skillId));
       }
     } catch (err) {
+      setEnabledIds((prev) => {
+        const n = new Set(prev);
+        if (wasEnabled) n.add(skillId);
+        else n.delete(skillId);
+        return n;
+      });
       console.error('[SkillsTab] toggle failed:', err);
     } finally {
       setToggling(null);
@@ -206,7 +243,24 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
   if (loading.skills || globalLoading) return <Loading />;
   if (errors.skills) return <ErrorBox msg={errors.skills} onRetry={() => onRefresh('skills')} />;
 
-  const displaySkills = globalSkills.length > 0 ? globalSkills : skills;
+  const displaySkills = globalSkills;
+
+  if (displaySkills.length === 0) {
+    return (
+      <div className="h-full overflow-y-auto px-6 py-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Network size={14} color="#ffd700" />
+          <span className="text-xs font-bold" style={{ color: '#ffd700' }}>技能图谱</span>
+        </div>
+        <div className="flex flex-col items-center justify-center py-16" style={{ color: '#666' }}>
+          <p className="text-xs">{loadError || '技能广场尚未启用任何技能'}</p>
+          <button onClick={loadGlobalSkills} className="mt-3 px-3 py-1 rounded text-[10px]" style={{ background: 'rgba(0,240,255,0.1)', color: '#00f0ff' }}>
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto px-6 py-5">

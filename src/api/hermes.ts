@@ -18,14 +18,16 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     headers: { ...buildHeaders(), ...options.headers },
   });
   if (!res.ok) {
+    const text = await res.text().catch(() => '');
     let errMsg = `Hermes API ${res.status}`;
+    let detail = '';
     try {
-      const body = await res.json();
-      if (body.error) errMsg += `: ${typeof body.error === 'string' ? body.error : body.error.message || JSON.stringify(body.error)}`;
+      const body = JSON.parse(text);
+      detail = typeof body.error === 'string' ? body.error : body.error?.message || '';
     } catch {
-      const text = await res.text().catch(() => '');
-      if (text) errMsg += `: ${text}`;
+      detail = text;
     }
+    if (detail) errMsg += `: ${detail}`;
     throw new Error(errMsg);
   }
   return res.json();
@@ -134,14 +136,16 @@ export async function sendChat(
   });
 
   if (!res.ok) {
+    const text = await res.text().catch(() => '');
     let errMsg = `Chat failed: ${res.status}`;
+    let detail = '';
     try {
-      const errorBody = await res.json();
-      if (errorBody.error) errMsg += `: ${typeof errorBody.error === 'string' ? errorBody.error : errorBody.error.message || ''}`;
+      const errorBody = JSON.parse(text);
+      detail = typeof errorBody.error === 'string' ? errorBody.error : errorBody.error?.message || '';
     } catch {
-      const text = await res.text().catch(() => '');
-      if (text) errMsg += `: ${text}`;
+      detail = text;
     }
+    if (detail) errMsg += `: ${detail}`;
     throw new Error(errMsg);
   }
 
