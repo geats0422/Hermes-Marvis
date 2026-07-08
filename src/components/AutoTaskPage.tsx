@@ -83,6 +83,7 @@ export default function AutoTaskPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<typeof PRESET_TASKS[0] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -174,7 +175,7 @@ export default function AutoTaskPage() {
           </div>
         )}
 
-        {!loading && jobs.length === 0 && !error && <EmptyState onCreate={() => setShowCreate(true)} />}
+        {!loading && jobs.length === 0 && !error && <EmptyState onCreate={() => { setSelectedPreset(null); setShowCreate(true); }} />}
 
         {/* 推荐任务 */}
         <div className="mt-4">
@@ -192,7 +193,10 @@ export default function AutoTaskPage() {
                   transition={{ delay: idx * 0.05, duration: 0.3 }}
                   whileHover={{ borderColor: `${task.color}50`, boxShadow: `0 0 12px ${task.color}15` }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowCreate(true)}
+                  onClick={() => {
+                    setSelectedPreset(task);
+                    setShowCreate(true);
+                  }}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: `${task.color}15` }}>
@@ -214,9 +218,14 @@ export default function AutoTaskPage() {
       {/* ── 新建任务弹窗 ── */}
       <CreateJobModal
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        preset={selectedPreset}
+        onClose={() => {
+          setShowCreate(false);
+          setSelectedPreset(null);
+        }}
         onSuccess={async () => {
           setShowCreate(false);
+          setSelectedPreset(null);
           await refresh();
         }}
       />
@@ -329,17 +338,17 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <p className="text-[11px] text-center max-w-md mb-4" style={{ color: '#666' }}>
         Tips：请保持电脑开机并运行 hermes gateway，否则任务不会执行
       </p>
-      <motion.button
-        className="flex items-center gap-2 px-5 py-2 rounded-full text-xs"
-        style={{
-          background: 'linear-gradient(135deg, #00f0ff, #0099cc)',
-          color: '#fff',
-          boxShadow: '0 0 20px rgba(0,240,255,0.2)',
-        }}
-        whileHover={{ scale: 1.03, boxShadow: '0 0 30px rgba(0,240,255,0.3)' }}
-        whileTap={{ scale: 0.97 }}
-        onClick={onCreate}
-      >
+          <motion.button
+            className="flex items-center gap-2 px-5 py-2 rounded-full text-xs"
+            style={{
+              background: 'linear-gradient(135deg, #00f0ff, #0099cc)',
+              color: '#fff',
+              boxShadow: '0 0 20px rgba(0,240,255,0.2)',
+            }}
+            whileHover={{ scale: 1.03, boxShadow: '0 0 30px rgba(0,240,255,0.3)' }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onCreate}
+          >
         <Plus size={14} />
         <span>新建自动任务</span>
       </motion.button>
@@ -348,7 +357,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 }
 
 /* ── 新建弹窗（参照 Hermes 官方 WebUI 样式） ── */
-function CreateJobModal({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+function CreateJobModal({ open, preset, onClose, onSuccess }: { open: boolean; preset: typeof PRESET_TASKS[0] | null; onClose: () => void; onSuccess: () => void }) {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [repeat, setRepeat] = useState<RepeatType>('once');
@@ -362,8 +371,8 @@ function CreateJobModal({ open, onClose, onSuccess }: { open: boolean; onClose: 
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setPrompt('');
+      setName(preset?.title || '');
+      setPrompt(preset?.prompt || '');
       setRepeat('once');
       setDate('');
       setTime('');
@@ -372,7 +381,7 @@ function CreateJobModal({ open, onClose, onSuccess }: { open: boolean; onClose: 
       setDeliver('local');
       setError(null);
     }
-  }, [open]);
+  }, [open, preset]);
 
   const buildSchedule = (): string | null => {
     if (repeat === 'once') {
