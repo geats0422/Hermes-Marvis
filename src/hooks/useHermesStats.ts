@@ -19,7 +19,7 @@ export function useHermesStats() {
     };
 
     fetchSessions();
-    const interval = setInterval(fetchSessions, 15000);
+    const interval = setInterval(fetchSessions, 10000);
     return () => clearInterval(interval);
   }, []);
 
