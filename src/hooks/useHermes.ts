@@ -82,16 +82,27 @@ export function useChat(ctx: AgentChatContext) {
     try {
       const msgs = await getSessionMessages(sid);
       if (sessionIdRef.current !== sid) return;
-      setMessages(msgs.map((m) => ({
-        id: `msg-${m.id}`,
-        role: m.role === 'user' ? 'user' : 'agent',
-        text: m.content,
-        timestamp: new Date(m.timestamp * 1000).toISOString(),
-      })));
-    } catch {
-      // ignore
+      setMessages(msgs
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({
+          id: `msg-${m.id}`,
+          role: m.role === 'user' ? 'user' as const : 'agent' as const,
+          text: m.content,
+          timestamp: new Date(m.timestamp * 1000).toISOString(),
+        })));
+    } catch (err) {
+      console.error('[useChat] loadHistory failed:', err);
     }
   };
+
+  useEffect(() => {
+    if (!ctx.sessionId) return;
+    const interval = setInterval(async () => {
+      if (streamingRef.current || !sessionIdRef.current) return;
+      await loadHistory(sessionIdRef.current);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [ctx.sessionId]);
 
   const send = useCallback(async (text: string, attachments?: { name: string; dataUrl: string }[]) => {
     const hasText = text.trim().length > 0;

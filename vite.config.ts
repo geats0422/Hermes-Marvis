@@ -1,15 +1,24 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import http from 'node:http'
 
 const hermesTarget = 'http://127.0.0.1:8642'
 
-// Strip Origin header so Hermes treats proxied requests as non-browser
-function noOrigin() {
+// Reuse TCP connections to avoid Windows EADDRINUSE on high-frequency polling
+const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 6 })
+
+// Strip Origin header so Hermes treats proxied requests as non-browser;
+// log transient proxy errors instead of crashing the dev server
+function hermesProxy() {
   return {
+    agent: keepAliveAgent,
     configure: (proxy: { on: (...args: never[]) => void }) => {
       proxy.on('proxyReq' as never, ((proxyReq: { removeHeader: (h: string) => void }) => {
         proxyReq.removeHeader('origin')
+      }) as never)
+      proxy.on('error' as never, ((err: Error, req: { url: string }) => {
+        console.warn(`[proxy] ${req.url}: ${err.message}`)
       }) as never)
     },
   }
@@ -34,9 +43,9 @@ export default defineConfig({
       ].join('; '),
     },
     proxy: {
-      '/api': { target: hermesTarget, ...noOrigin() },
-      '/health': { target: hermesTarget, ...noOrigin() },
-      '/v1': { target: hermesTarget, ...noOrigin() },
+      '/api': { target: hermesTarget, ...hermesProxy() },
+      '/health': { target: hermesTarget, ...hermesProxy() },
+      '/v1': { target: hermesTarget, ...hermesProxy() },
       '/obsidian-api': {
         target: 'http://127.0.0.1:8643',
         rewrite: (path) => path.replace(/^\/obsidian-api/, ''),
