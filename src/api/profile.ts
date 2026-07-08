@@ -61,3 +61,27 @@ export async function getAgentLogs(agentId: string, limit = 100): Promise<AgentL
 export async function getGlobalMemory(name: 'MEMORY.md' | 'USER.md'): Promise<TextFile> {
   return request(`/memories/${name}`);
 }
+
+export async function getGlobalSkills(): Promise<AgentSkill[]> {
+  const data = await request<{ skills: AgentSkill[] }>('/global-skills');
+  return data.skills;
+}
+
+async function mutateRequest<T>(path: string, method: string): Promise<T> {
+  const res = await fetch(`/profile-api${path}`, { method, headers: { 'Content-Type': 'application/json' } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function enableSkillForAgent(agentId: string, skillId: string): Promise<boolean> {
+  const data = await mutateRequest<{ enabled: boolean }>(`/${agentId}/skills/${skillId}`, 'POST');
+  return data.enabled;
+}
+
+export async function disableSkillForAgent(agentId: string, skillId: string): Promise<boolean> {
+  const data = await mutateRequest<{ enabled: boolean }>(`/${agentId}/skills/${skillId}`, 'DELETE');
+  return data.enabled;
+}

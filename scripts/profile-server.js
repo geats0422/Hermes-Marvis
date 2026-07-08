@@ -145,8 +145,30 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const parts = url.pathname.split('/').filter(Boolean);
 
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'GET' && url.pathname === '/health') {
     json(res, 200, { status: 'ok', home: HERMES_HOME });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/global-skills') {
+    const globalSkillsDir = path.join(HERMES_HOME, 'skills');
+    if (!fs.existsSync(globalSkillsDir)) {
+      json(res, 200, { skills: [] });
+      return;
+    }
+    const entries = fs.readdirSync(globalSkillsDir, { withFileTypes: true });
+    const skills = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .map((e) => {
+        const dirPath = path.join(globalSkillsDir, e.name);
+        const description = parseSkillDescription(dirPath) || '';
+        return { id: e.name, name: e.name, description };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    json(res, 200, { skills });
     return;
   }
 
@@ -203,9 +225,38 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (resource === 'skills') {
+    if (resource === 'skills' && parts.length === 2) {
       json(res, 200, { skills: listSkills(agentId) });
       return;
+    }
+
+    if (resource === 'skills' && parts.length === 3 && req.method !== 'GET') {
+      const skillId = parts[2];
+      const globalSkillDir = path.join(HERMES_HOME, 'skills', skillId);
+      if (!fs.existsSync(globalSkillDir)) {
+        json(res, 404, { error: 'Global skill not found' });
+        return;
+      }
+      if (req.method === 'POST') {
+        const agentSkillsDir = path.join(getProfileDir(agentId), 'skills');
+        if (!fs.existsSync(agentSkillsDir)) fs.mkdirSync(agentSkillsDir, { recursive: true });
+        const target = path.join(agentSkillsDir, skillId);
+        if (!fs.existsSync(target)) {
+          try { fs.cpSync(globalSkillDir, target, { recursive: true }); }
+          catch (e) { json(res, 500, { error: e.message }); return; }
+        }
+        json(res, 200, { enabled: true, skillId });
+        return;
+      }
+      if (req.method === 'DELETE') {
+        const agentSkillsDir = path.join(getProfileDir(agentId), 'skills');
+        const target = path.join(agentSkillsDir, skillId);
+        if (fs.existsSync(target)) {
+          fs.rmSync(target, { recursive: true, force: true });
+        }
+        json(res, 200, { enabled: false, skillId });
+        return;
+      }
     }
 
     if (resource === 'logs') {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,7 @@ import type { Agent, Memory } from '../data';
 import type { ChatMessage } from '../types/hermes';
 import type { AgentMemoryMap } from '../hooks/useAgentMemory';
 import type { AgentProfileInfo, AgentSkill, AgentLogLine } from '../api/profile';
+import { getGlobalSkills, enableSkillForAgent, disableSkillForAgent } from '../api/profile';
 
 export type TabId = 'evolution' | 'skills' | 'runtime' | 'memory' | 'records' | 'config';
 
@@ -162,10 +163,50 @@ function EvolutionTab({ agent, loading, errors, onRefresh }: AgentProfileTabsPro
 }
 
 function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTabsProps) {
-  if (loading.skills) return <Loading />;
+  const [globalSkills, setGlobalSkills] = useState<AgentSkill[]>([]);
+  const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [globalLoading, setGlobalLoading] = useState(true);
+
+  const agentSkillIds = new Set(skills.map((s) => s.id));
+
+  const loadGlobalSkills = useCallback(async () => {
+    setGlobalLoading(true);
+    try {
+      const gs = await getGlobalSkills();
+      setGlobalSkills(gs);
+      setEnabledIds(new Set(gs.filter((s) => agentSkillIds.has(s.id)).map((s) => s.id)));
+    } catch {
+      setGlobalSkills([]);
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, [agentSkillIds.size]);
+
+  useEffect(() => { loadGlobalSkills(); }, [loadGlobalSkills]);
+
+  const toggleSkill = async (skillId: string) => {
+    if (toggling) return;
+    setToggling(skillId);
+    try {
+      if (enabledIds.has(skillId)) {
+        await disableSkillForAgent(agent.id, skillId);
+        setEnabledIds((prev) => { const n = new Set(prev); n.delete(skillId); return n; });
+      } else {
+        await enableSkillForAgent(agent.id, skillId);
+        setEnabledIds((prev) => new Set(prev).add(skillId));
+      }
+    } catch (err) {
+      console.error('[SkillsTab] toggle failed:', err);
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  if (loading.skills || globalLoading) return <Loading />;
   if (errors.skills) return <ErrorBox msg={errors.skills} onRetry={() => onRefresh('skills')} />;
 
-  const displaySkills = skills.length > 0 ? skills : agent.skills.map((s) => ({ id: s.name, name: s.name, description: s.description }));
+  const displaySkills = globalSkills.length > 0 ? globalSkills : skills;
 
   return (
     <div className="h-full overflow-y-auto px-6 py-5">
@@ -174,23 +215,37 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
           <Network size={14} color="#ffd700" />
           <span className="text-xs font-bold" style={{ color: '#ffd700' }}>技能图谱</span>
         </div>
-        <span className="text-[10px]" style={{ color: '#666' }}>共 {displaySkills.length} 个技能</span>
+        <span className="text-[10px]" style={{ color: '#666' }}>
+          共 {displaySkills.length} 个技能 · 已启用 {enabledIds.size} 个
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {displaySkills.map((skill, idx) => (
-          <motion.div
-            key={skill.id}
-            className="rounded-lg px-3 py-3 border"
-            style={{ borderColor: 'rgba(0,240,255,0.15)', background: 'rgba(0,240,255,0.03)' }}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.03 }}
-            whileHover={{ borderColor: 'rgba(0,240,255,0.4)', boxShadow: '0 0 12px rgba(0,240,255,0.1)' }}
-          >
-            <p className="text-xs font-medium" style={{ color: '#e0e0e0' }}>{skill.name}</p>
-            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#9ca3af' }}>{skill.description || '暂无描述'}</p>
-          </motion.div>
-        ))}
+        {displaySkills.map((skill, idx) => {
+          const enabled = enabledIds.has(skill.id);
+          return (
+            <motion.div
+              key={skill.id}
+              className="rounded-lg px-3 py-3 border flex items-start justify-between gap-2"
+              style={{ borderColor: enabled ? 'rgba(0,240,255,0.3)' : 'rgba(0,240,255,0.15)', background: enabled ? 'rgba(0,240,255,0.06)' : 'rgba(0,240,255,0.03)' }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.03 }}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium" style={{ color: '#e0e0e0' }}>{skill.name}</p>
+                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#9ca3af' }}>{skill.description || '暂无描述'}</p>
+              </div>
+              <button
+                onClick={() => toggleSkill(skill.id)}
+                disabled={toggling === skill.id}
+                className="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors"
+                style={{ background: enabled ? '#00f0ff' : 'rgba(255,255,255,0.15)', opacity: toggling === skill.id ? 0.5 : 1 }}
+              >
+                <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: enabled ? '18px' : '2px', transform: toggling === skill.id ? 'scale(0.85)' : 'scale(1)' }} />
+              </button>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
