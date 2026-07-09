@@ -1,3 +1,5 @@
+import type { SkillCollectionsResponse } from '../types/skills';
+
 export interface AgentProfileInfo {
   agentId: string;
   exists: boolean;
@@ -65,6 +67,10 @@ export async function getGlobalMemory(name: 'MEMORY.md' | 'USER.md'): Promise<Te
 export async function getGlobalSkills(): Promise<AgentSkill[]> {
   const data = await request<{ skills: AgentSkill[] }>('/global-skills');
   return data.skills;
+}
+
+export async function getSkillCollections(): Promise<SkillCollectionsResponse> {
+  return request('/skill-collections');
 }
 
 export async function getGlobalEnabledSkills(): Promise<string[]> {

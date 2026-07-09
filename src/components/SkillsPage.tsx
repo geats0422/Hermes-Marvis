@@ -10,11 +10,13 @@ import {
   Wrench, Globe, Image as ImageIcon, Code, Music,
   Gamepad2, Home, BookOpen, Shield, Cpu, Terminal,
   Database, MessageCircle, Network, Zap, Filter,
-  RefreshCw, Wifi, WifiOff, Layers,
+  RefreshCw, Wifi, WifiOff, Layers, Folder, ChevronRight,
 } from 'lucide-react';
 import { getSkills, getToolsets } from '../api/hermes';
-import { getGlobalEnabledSkills, enableGlobalSkill, disableGlobalSkill } from '../api/profile';
+import { getGlobalEnabledSkills, enableGlobalSkill, disableGlobalSkill, getSkillCollections } from '../api/profile';
 import type { HermesSkill, HermesToolset } from '../types/hermes';
+import type { SkillCollection } from '../types/skills';
+import { getCollectionSkillNames } from '../types/skills';
 
 type ViewMode = 'skills' | 'toolsets';
 
@@ -88,6 +90,9 @@ export default function SkillsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [collections, setCollections] = useState<SkillCollection[]>([]);
+  const [collectionsFailed, setCollectionsFailed] = useState(false);
+  const [expandedCollections, setExpandedCollections] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getGlobalEnabledSkills()
@@ -97,12 +102,19 @@ export default function SkillsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [skillsResult, toolsetsResult] = await Promise.allSettled([
+      const [skillsResult, toolsetsResult, collectionsResult] = await Promise.allSettled([
         getSkills(),
         getToolsets(),
+        getSkillCollections(),
       ]);
       if (skillsResult.status === 'fulfilled') setSkills(skillsResult.value);
       if (toolsetsResult.status === 'fulfilled') setToolsets(toolsetsResult.value);
+      if (collectionsResult.status === 'fulfilled') {
+        setCollections(collectionsResult.value.collections);
+        setCollectionsFailed(false);
+      } else {
+        setCollectionsFailed(true);
+      }
       if (skillsResult.status === 'rejected' && toolsetsResult.status === 'rejected') {
         setError(true);
       } else {
@@ -126,8 +138,45 @@ export default function SkillsPage() {
   const skillCategories = useMemo(() => {
     const cats = new Set<string>();
     skills.forEach((s) => s.category && cats.add(s.category));
+    collections.forEach((c) => c.category && cats.add(c.category));
     return ['全部', ...Array.from(cats).sort()];
-  }, [skills]);
+  }, [skills, collections]);
+
+  /* 合集子技能名集合 — 用于从扁平列表里剔除已属于合集的 skill */
+  const collectionChildNameSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of collections) {
+      if (c.router) s.add(c.router.name);
+      c.children.forEach((child) => s.add(child.name));
+    }
+    return s;
+  }, [collections]);
+
+  /* 合集启用态：所有 children 名 + router 名都在 added 中才算已启用 */
+  const isCollectionAdded = useCallback(
+    (c: SkillCollection) => getCollectionSkillNames(c).every((n) => added.has(n)),
+    [added]
+  );
+
+  /* 过滤后的合集列表 */
+  const filteredCollections = useMemo(() => {
+    if (collectionsFailed || collections.length === 0) return [];
+    let result = collections;
+    if (activeCategory !== '全部') {
+      result = result.filter((c) => c.category === activeCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.id.toLowerCase().includes(q) ||
+          (c.category || '').toLowerCase().includes(q) ||
+          (c.router?.description || '').toLowerCase().includes(q) ||
+          c.children.some((ch) => ch.name.toLowerCase().includes(q) || ch.description.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [collections, collectionsFailed, activeCategory, searchQuery]);
 
   /* 过滤技能 */
   const filteredSkills = useMemo(() => {
@@ -141,8 +190,11 @@ export default function SkillsPage() {
         (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
       );
     }
-    return result;
-  }, [skills, activeCategory, searchQuery]);
+    if (!collectionsFailed && collections.length > 0) {
+      result = result.filter((s) => !collectionChildNameSet.has(s.name));
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [skills, activeCategory, searchQuery, collectionsFailed, collections.length, collectionChildNameSet]);
 
   /* 过滤工具集 */
   const filteredToolsets = useMemo(() => {
@@ -175,6 +227,37 @@ export default function SkillsPage() {
         return next;
       });
     }
+  };
+
+  const handleToggleCollection = async (c: SkillCollection) => {
+    const names = getCollectionSkillNames(c);
+    const wasAdded = isCollectionAdded(c);
+    const snapshot = new Set(added);
+    setAdded((prev) => {
+      const next = new Set(prev);
+      if (wasAdded) names.forEach((n) => next.delete(n));
+      else names.forEach((n) => next.add(n));
+      return next;
+    });
+    try {
+      await Promise.all(names.map((n) => (wasAdded ? disableGlobalSkill(n) : enableGlobalSkill(n))));
+    } catch {
+      try {
+        const real = await getGlobalEnabledSkills();
+        setAdded(new Set(real));
+      } catch {
+        setAdded(snapshot);
+      }
+    }
+  };
+
+  const toggleExpandCollection = (id: string) => {
+    setExpandedCollections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   if (loading) {
@@ -325,92 +408,206 @@ export default function SkillsPage() {
           </div>
         ) : viewMode === 'skills' ? (
           <AnimatePresence mode="popLayout">
-            {filteredSkills.length > 0 ? (
-              <motion.div
-                key={activeCategory + searchQuery}
-                className="grid grid-cols-3 gap-3"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                {filteredSkills.map((skill, idx) => {
-                  const Icon = categoryIcons[skill.category || ''] || Wrench;
-                  const color = categoryColors[skill.category || ''] || '#00f0ff';
-                  const isAdded = added.has(skill.name);
-                  return (
-                    <motion.div
-                      key={skill.name}
-                      className="rounded-lg border p-3 flex flex-col group"
-                      style={{
-                        borderColor: isAdded ? `${color}40` : 'rgba(0,240,255,0.1)',
-                        background: isAdded ? `${color}08` : 'rgba(0,0,0,0.3)',
-                      }}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: Math.min(idx * 0.02, 0.5), duration: 0.3 }}
-                      layout
-                      whileHover={{
-                        borderColor: `${color}50`,
-                        boxShadow: `0 0 12px ${color}20`,
-                      }}
-                    >
-                      <div className="flex items-start gap-2.5 mb-2">
-                        <div
-                          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ background: `${color}15`, border: `1px solid ${color}30` }}
-                        >
-                          <Icon size={16} color={color} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
-                            {skill.name}
-                          </h3>
-                          {skill.category && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>
-                                {categoryLabels[skill.category] || skill.category}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-[10px] leading-relaxed line-clamp-2 mb-3 flex-1" style={{ color: '#9ca3af' }}>
-                        {skill.description}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px]" style={{ color: '#666' }}>
-                          Hermes 已安装
-                        </span>
-                        <motion.button
-                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
-                          style={{
-                            background: isAdded ? `${color}20` : 'rgba(0,240,255,0.08)',
-                            border: `1px solid ${isAdded ? `${color}50` : 'rgba(0,240,255,0.2)'}`,
-                            color: isAdded ? color : '#00f0ff',
-                          }}
-                          whileHover={{
-                            background: isAdded ? `${color}30` : 'rgba(0,240,255,0.15)',
-                          }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => handleToggleAdd(skill.name)}
-                        >
-                          {isAdded ? (
-                            <><Check size={10} /><span>已启用</span></>
-                          ) : (
-                            <><Plus size={10} /><span>启用</span></>
-                          )}
-                        </motion.button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            ) : (
+            {filteredCollections.length === 0 && filteredSkills.length === 0 ? (
               <motion.div key="empty" className="flex flex-col items-center justify-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.1)' }}>
                   <Search size={20} color="#666" />
                 </div>
                 <p className="text-xs" style={{ color: '#666' }}>没有找到匹配的技能</p>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={activeCategory + searchQuery}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {filteredCollections.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center gap-1.5 mb-2 px-1">
+                      <Folder size={10} color="#ffd700" />
+                      <span className="text-[10px] tracking-wider font-bold" style={{ color: '#ffd700' }}>技能合集</span>
+                      <span className="text-[9px]" style={{ color: '#666' }}>({filteredCollections.length})</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {filteredCollections.map((c, idx) => {
+                        const color = categoryColors[c.category || ''] || '#ffd700';
+                        const isAdded = isCollectionAdded(c);
+                        const isExpanded = expandedCollections.has(c.id);
+                        return (
+                          <motion.div
+                            key={c.id}
+                            className="rounded-lg border flex flex-col"
+                            style={{
+                              borderColor: isAdded ? `${color}50` : 'rgba(255,215,0,0.2)',
+                              background: isAdded ? `${color}0a` : 'rgba(0,0,0,0.3)',
+                            }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: Math.min(idx * 0.02, 0.5), duration: 0.3 }}
+                            layout
+                            whileHover={{ borderColor: `${color}60`, boxShadow: `0 0 12px ${color}25` }}
+                          >
+                            <div className="p-3 flex flex-col flex-1">
+                              <div className="flex items-start gap-2.5 mb-2">
+                                <div
+                                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                  style={{ background: `${color}15`, border: `1px solid ${color}40` }}
+                                >
+                                  <Folder size={16} color={color} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
+                                    {c.id}
+                                  </h3>
+                                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>
+                                      {c.category ? (categoryLabels[c.category] || c.category) : '合集'}
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,215,0,0.1)', color: '#ffd700' }}>
+                                      {c.children.length} 子技能
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <p className="text-[10px] leading-relaxed line-clamp-2 mb-2 flex-1" style={{ color: '#9ca3af' }}>
+                                {c.router?.description || `包含 ${c.children.length} 个子技能的合集`}
+                              </p>
+                              <button
+                                className="text-[9px] flex items-center gap-1 mb-2 hover:opacity-80"
+                                style={{ color: '#666' }}
+                                onClick={() => toggleExpandCollection(c.id)}
+                              >
+                                <ChevronRight
+                                  size={9}
+                                  color="#666"
+                                  style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+                                />
+                                {isExpanded ? '收起' : '查看子技能'}
+                              </button>
+                              {isExpanded && (
+                                <div className="mb-2 max-h-32 overflow-y-auto rounded p-1.5" style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${color}15` }}>
+                                  {c.children.map((ch) => (
+                                    <div key={ch.name} className="text-[9px] py-0.5 leading-tight" style={{ color: '#9ca3af' }}>
+                                      <span style={{ color: '#00f0ff' }}>·</span> <span style={{ color: '#e0e0e0' }}>{ch.name}</span>
+                                      {ch.description && <span style={{ color: '#666' }}> — {ch.description.slice(0, 50)}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px]" style={{ color: '#666' }}>
+                                  {c.router ? '路由器合集' : '流程合集'}
+                                </span>
+                                <motion.button
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
+                                  style={{
+                                    background: isAdded ? `${color}25` : 'rgba(255,215,0,0.1)',
+                                    border: `1px solid ${isAdded ? `${color}60` : 'rgba(255,215,0,0.3)'}`,
+                                    color: isAdded ? color : '#ffd700',
+                                  }}
+                                  whileHover={{ background: isAdded ? `${color}35` : 'rgba(255,215,0,0.2)' }}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={() => handleToggleCollection(c)}
+                                >
+                                  {isAdded ? (
+                                    <><Check size={10} /><span>已启用</span></>
+                                  ) : (
+                                    <><Plus size={10} /><span>启用合集</span></>
+                                  )}
+                                </motion.button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {filteredSkills.length > 0 && (
+                  <div>
+                    {filteredCollections.length > 0 && (
+                      <div className="flex items-center gap-1.5 mb-2 px-1">
+                        <Sparkles size={10} color="#00f0ff" />
+                        <span className="text-[10px] tracking-wider font-bold" style={{ color: '#00f0ff' }}>独立技能</span>
+                        <span className="text-[9px]" style={{ color: '#666' }}>({filteredSkills.length})</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-3 gap-3">
+                      {filteredSkills.map((skill, idx) => {
+                        const Icon = categoryIcons[skill.category || ''] || Wrench;
+                        const color = categoryColors[skill.category || ''] || '#00f0ff';
+                        const isAdded = added.has(skill.name);
+                        return (
+                          <motion.div
+                            key={skill.name}
+                            className="rounded-lg border p-3 flex flex-col group"
+                            style={{
+                              borderColor: isAdded ? `${color}40` : 'rgba(0,240,255,0.1)',
+                              background: isAdded ? `${color}08` : 'rgba(0,0,0,0.3)',
+                            }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: Math.min(idx * 0.02, 0.5), duration: 0.3 }}
+                            layout
+                            whileHover={{
+                              borderColor: `${color}50`,
+                              boxShadow: `0 0 12px ${color}20`,
+                            }}
+                          >
+                            <div className="flex items-start gap-2.5 mb-2">
+                              <div
+                                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                style={{ background: `${color}15`, border: `1px solid ${color}30` }}
+                              >
+                                <Icon size={16} color={color} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-[11px] font-bold truncate" style={{ color: '#e0e0e0' }}>
+                                  {skill.name}
+                                </h3>
+                                {skill.category && (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color }}>
+                                      {categoryLabels[skill.category] || skill.category}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-[10px] leading-relaxed line-clamp-2 mb-3 flex-1" style={{ color: '#9ca3af' }}>
+                              {skill.description}
+                            </p>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px]" style={{ color: '#666' }}>
+                                Hermes 已安装
+                              </span>
+                              <motion.button
+                                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px]"
+                                style={{
+                                  background: isAdded ? `${color}20` : 'rgba(0,240,255,0.08)',
+                                  border: `1px solid ${isAdded ? `${color}50` : 'rgba(0,240,255,0.2)'}`,
+                                  color: isAdded ? color : '#00f0ff',
+                                }}
+                                whileHover={{
+                                  background: isAdded ? `${color}30` : 'rgba(0,240,255,0.15)',
+                                }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleToggleAdd(skill.name)}
+                              >
+                                {isAdded ? (
+                                  <><Check size={10} /><span>已启用</span></>
+                                ) : (
+                                  <><Plus size={10} /><span>启用</span></>
+                                )}
+                              </motion.button>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

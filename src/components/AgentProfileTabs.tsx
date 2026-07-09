@@ -5,14 +5,16 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import {
   X, Send, FileText, Plus, Image as ImageIcon, FileCode,
-  Dna, Network, Activity, Brain, ScrollText, Settings, AlertCircle, RefreshCw
+  Dna, Network, Activity, Brain, ScrollText, Settings, AlertCircle, RefreshCw, Folder,
 } from 'lucide-react';
 import type { Agent, Memory } from '../data';
 import type { ChatMessage } from '../types/hermes';
 import type { AgentMemoryMap } from '../hooks/useAgentMemory';
 import type { AgentProfileInfo, AgentSkill, AgentLogLine } from '../api/profile';
-import { getGlobalSkills, enableSkillForAgent, disableSkillForAgent, getGlobalEnabledSkills } from '../api/profile';
+import { getGlobalSkills, enableSkillForAgent, disableSkillForAgent, getGlobalEnabledSkills, getSkillCollections } from '../api/profile';
 import { getSkills as getHermesSkills } from '../api/hermes';
+import type { SkillCollection, SkillStandalone } from '../types/skills';
+import { getCollectionSkillNames } from '../types/skills';
 
 export type TabId = 'evolution' | 'skills' | 'runtime' | 'memory' | 'records' | 'config';
 
@@ -169,6 +171,10 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
   const [toggling, setToggling] = useState<string | null>(null);
   const [globalLoading, setGlobalLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [collections, setCollections] = useState<SkillCollection[]>([]);
+  const [standaloneNames, setStandaloneNames] = useState<Set<string>>(new Set());
+  const [collectionsFailed, setCollectionsFailed] = useState(false);
+  const [collectionToggling, setCollectionToggling] = useState<string | null>(null);
 
   const agentSkillIds = new Set(skills.map((s) => s.id));
 
@@ -176,10 +182,14 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
     setGlobalLoading(true);
     setLoadError(null);
     try {
-      const [hermesSkills, globalEnabled] = await Promise.all([
+      const [hermesSkills, globalEnabled, collResp] = await Promise.all([
         getHermesSkills(),
         getGlobalEnabledSkills(),
+        getSkillCollections(),
       ]);
+      setCollections(collResp.collections);
+      setStandaloneNames(new Set(collResp.standalones.map((s: SkillStandalone) => s.name)));
+      setCollectionsFailed(false);
       const enabledSet = new Set(globalEnabled);
       const gs: AgentSkill[] = hermesSkills
         .filter((s) => enabledSet.has(s.name))
@@ -196,6 +206,9 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
           getGlobalSkills(),
           getGlobalEnabledSkills(),
         ]);
+        setCollections([]);
+        setStandaloneNames(new Set());
+        setCollectionsFailed(true);
         const enabledSet = new Set(globalEnabled);
         const filtered = gs.filter((s) => enabledSet.has(s.id));
         setGlobalSkills(filtered);
@@ -227,6 +240,7 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
       } else {
         await enableSkillForAgent(agent.id, skillId);
       }
+      onRefresh('skills');
     } catch (err) {
       setEnabledIds((prev) => {
         const n = new Set(prev);
@@ -240,12 +254,49 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
     }
   };
 
+  const toggleCollection = async (c: SkillCollection) => {
+    if (collectionToggling) return;
+    setCollectionToggling(c.id);
+    const wasEnabled = agentSkillIds.has(c.id);
+    try {
+      if (wasEnabled) {
+        await disableSkillForAgent(agent.id, c.id);
+      } else {
+        await enableSkillForAgent(agent.id, c.id);
+      }
+      onRefresh('skills');
+    } catch (err) {
+      console.error('[SkillsTab] collection toggle failed:', err);
+    } finally {
+      setCollectionToggling(null);
+    }
+  };
+
   if (loading.skills || globalLoading) return <Loading />;
   if (errors.skills) return <ErrorBox msg={errors.skills} onRetry={() => onRefresh('skills')} />;
 
-  const displaySkills = globalSkills;
+  const enabledSet = new Set(globalSkills.map((s) => s.id));
 
-  if (displaySkills.length === 0) {
+  const visibleCollections = !collectionsFailed
+    ? collections
+        .filter((c) => getCollectionSkillNames(c).some((n) => enabledSet.has(n)))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    : [];
+
+  const agentEnabledCollectionIds = new Set(visibleCollections.map((c) => c.id).filter((id) => agentSkillIds.has(id)));
+
+  const allVisibleCollectionChildNames = new Set<string>();
+  for (const c of visibleCollections) {
+    getCollectionSkillNames(c).forEach((n) => allVisibleCollectionChildNames.add(n));
+  }
+  const flatSkills = globalSkills
+    .filter((s) => !allVisibleCollectionChildNames.has(s.id))
+    .filter((s) => standaloneNames.has(s.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const totalShown = visibleCollections.length + flatSkills.length;
+
+  if (totalShown === 0) {
     return (
       <div className="h-full overflow-y-auto px-6 py-5">
         <div className="flex items-center gap-2 mb-4">
@@ -270,37 +321,104 @@ function SkillsTab({ agent, skills, loading, errors, onRefresh }: AgentProfileTa
           <span className="text-xs font-bold" style={{ color: '#ffd700' }}>技能图谱</span>
         </div>
         <span className="text-[10px]" style={{ color: '#666' }}>
-          共 {displaySkills.length} 个技能 · 已启用 {enabledIds.size} 个
+          共 {totalShown} 项 · 已为 {agent.name} 启用 {enabledIds.size + agentEnabledCollectionIds.size} 项
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {displaySkills.map((skill, idx) => {
-          const enabled = enabledIds.has(skill.id);
-          return (
-            <motion.div
-              key={skill.id}
-              className="rounded-lg px-3 py-3 border flex items-start justify-between gap-2"
-              style={{ borderColor: enabled ? 'rgba(0,240,255,0.3)' : 'rgba(0,240,255,0.15)', background: enabled ? 'rgba(0,240,255,0.06)' : 'rgba(0,240,255,0.03)' }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.03 }}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium" style={{ color: '#e0e0e0' }}>{skill.name}</p>
-                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#9ca3af' }}>{skill.description || '暂无描述'}</p>
-              </div>
-              <button
-                onClick={() => toggleSkill(skill.id)}
-                disabled={toggling === skill.id}
-                className="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors"
-                style={{ background: enabled ? '#00f0ff' : 'rgba(255,255,255,0.15)', opacity: toggling === skill.id ? 0.5 : 1 }}
-              >
-                <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: enabled ? '18px' : '2px', transform: toggling === skill.id ? 'scale(0.85)' : 'scale(1)' }} />
-              </button>
-            </motion.div>
-          );
-        })}
-      </div>
+
+      {visibleCollections.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Folder size={11} color="#ffd700" />
+            <span className="text-[10px] font-bold tracking-wider" style={{ color: '#ffd700' }}>技能合集</span>
+            <span className="text-[9px]" style={{ color: '#666' }}>({visibleCollections.length})</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {visibleCollections.map((c, idx) => {
+              const enabled = agentSkillIds.has(c.id);
+              const childCount = c.children.length;
+              return (
+                <motion.div
+                  key={c.id}
+                  className="rounded-lg px-3 py-3 border flex items-start justify-between gap-2"
+                  style={{
+                    borderColor: enabled ? 'rgba(255,215,0,0.4)' : 'rgba(255,215,0,0.15)',
+                    background: enabled ? 'rgba(255,215,0,0.06)' : 'rgba(255,215,0,0.02)',
+                  }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <Folder size={11} color="#ffd700" />
+                      <p className="text-xs font-medium" style={{ color: '#e0e0e0' }}>{c.id}</p>
+                    </div>
+                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#9ca3af' }}>
+                      {c.router?.description || `包含 ${childCount} 个子技能的合集`}
+                    </p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,215,0,0.1)', color: '#ffd700' }}>
+                        {childCount} 子技能
+                      </span>
+                      <span className="text-[9px]" style={{ color: '#666' }}>
+                        · {c.router ? '路由器' : '流程'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleCollection(c)}
+                    disabled={collectionToggling === c.id}
+                    className="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors"
+                    style={{ background: enabled ? '#ffd700' : 'rgba(255,255,255,0.15)', opacity: collectionToggling === c.id ? 0.5 : 1 }}
+                  >
+                    <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: enabled ? '18px' : '2px', transform: collectionToggling === c.id ? 'scale(0.85)' : 'scale(1)' }} />
+                  </button>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {flatSkills.length > 0 && (
+        <div>
+          {visibleCollections.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <Network size={11} color="#00f0ff" />
+              <span className="text-[10px] font-bold tracking-wider" style={{ color: '#00f0ff' }}>独立技能</span>
+              <span className="text-[9px]" style={{ color: '#666' }}>({flatSkills.length})</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            {flatSkills.map((skill, idx) => {
+              const enabled = enabledIds.has(skill.id);
+              return (
+                <motion.div
+                  key={skill.id}
+                  className="rounded-lg px-3 py-3 border flex items-start justify-between gap-2"
+                  style={{ borderColor: enabled ? 'rgba(0,240,255,0.3)' : 'rgba(0,240,255,0.15)', background: enabled ? 'rgba(0,240,255,0.06)' : 'rgba(0,240,255,0.03)' }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium" style={{ color: '#e0e0e0' }}>{skill.name}</p>
+                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#9ca3af' }}>{skill.description || '暂无描述'}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleSkill(skill.id)}
+                    disabled={toggling === skill.id}
+                    className="flex-shrink-0 w-9 h-5 rounded-full relative transition-colors"
+                    style={{ background: enabled ? '#00f0ff' : 'rgba(255,255,255,0.15)', opacity: toggling === skill.id ? 0.5 : 1 }}
+                  >
+                    <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: enabled ? '18px' : '2px', transform: toggling === skill.id ? 'scale(0.85)' : 'scale(1)' }} />
+                  </button>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

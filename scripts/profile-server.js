@@ -91,6 +91,138 @@ function parseSkillDescription(dirPath) {
   return match ? match[1].trim() : content.trim();
 }
 
+const EXCLUDED_SKILL_DIRS = new Set([
+  '.git', '.github', '.hub', '.archive', '.venv', 'venv',
+  'node_modules', 'site-packages', '__pycache__',
+  '.tox', '.nox', '.pytest_cache', '.mypy_cache', '.ruff_cache',
+]);
+const SKILL_SUPPORT_DIRS = new Set(['references', 'templates', 'assets', 'scripts', 'examples']);
+
+function parseSkillFrontmatter(dirPath) {
+  const skillMdPath = path.join(dirPath, 'SKILL.md');
+  let content;
+  try { content = fs.readFileSync(skillMdPath, 'utf-8'); }
+  catch (e) { console.warn('[skill-collections] cannot read SKILL.md:', skillMdPath, e.code); return null; }
+  content = content.slice(0, 4000);
+  const fmMatch = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
+  if (!fmMatch) {
+    console.warn('[skill-collections] malformed SKILL.md (no frontmatter):', skillMdPath);
+    return null;
+  }
+  const fm = fmMatch[1];
+  const nameMatch = fm.match(/^name:\s*(.+?)\s*$/m);
+  const descMatch = fm.match(/^description:\s*(.+?)\s*$/m);
+  const strip = (s) => s.trim().replace(/^['"]|['"]$/g, '');
+  const name = nameMatch ? strip(nameMatch[1]) : '';
+  const description = descMatch ? strip(descMatch[1]) : '';
+  if (!name && !description) return null;
+  return { name, description };
+}
+
+function listSubDirs(dir, hasOwnSkillMd) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch { return []; }
+  return entries
+    .filter((e) =>
+      e.isDirectory() &&
+      !e.name.startsWith('.') &&
+      !EXCLUDED_SKILL_DIRS.has(e.name) &&
+      !(hasOwnSkillMd && SKILL_SUPPORT_DIRS.has(e.name))
+    )
+    .map((e) => ({ name: e.name, path: path.join(dir, e.name) }));
+}
+
+function collectDescendantSkills(rootDir) {
+  const out = [];
+  const seen = new Set();
+  function walk(dir, depth) {
+    if (depth > 6) return;
+    const hasOwnSkillMd = fs.existsSync(path.join(dir, 'SKILL.md'));
+    for (const sub of listSubDirs(dir, hasOwnSkillMd)) {
+      const fm = parseSkillFrontmatter(sub.path);
+      if (fm) {
+        const name = fm.name || sub.name;
+        if (!seen.has(name)) {
+          seen.add(name);
+          out.push({ name, description: fm.description || '' });
+        }
+      }
+      walk(sub.path, depth + 1);
+    }
+  }
+  walk(rootDir, 0);
+  return out;
+}
+
+function scanSkillCollections() {
+  const skillsDir = path.join(HERMES_HOME, 'skills');
+  if (!fs.existsSync(skillsDir)) return { collections: [], standalones: [] };
+
+  const collections = [];
+  const standalones = [];
+  const seenCollectionIds = new Set();
+  const seenStandaloneNames = new Set();
+
+  function addCollection(id, category, router, children) {
+    if (seenCollectionIds.has(id)) return;
+    seenCollectionIds.add(id);
+    collections.push({ id, category, router, children });
+  }
+  function addStandalone(id, name, description, category) {
+    if (seenStandaloneNames.has(name)) return;
+    seenStandaloneNames.add(name);
+    standalones.push({ id, name, description, category });
+  }
+
+  let topDirs;
+  try {
+    topDirs = fs.readdirSync(skillsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !EXCLUDED_SKILL_DIRS.has(e.name))
+      .map((e) => ({ name: e.name, path: path.join(skillsDir, e.name) }));
+  } catch {
+    return { collections: [], standalones: [] };
+  }
+
+  for (const top of topDirs) {
+    const topFm = parseSkillFrontmatter(top.path);
+    const topDescendants = collectDescendantSkills(top.path);
+
+    if (topFm && topFm.name === top.name && topDescendants.length > 0) {
+      addCollection(top.name, null, { name: topFm.name, description: topFm.description || '' }, topDescendants);
+      continue;
+    }
+
+    if (topFm && topDescendants.length === 0) {
+      addStandalone(top.name, topFm.name || top.name, topFm.description || '', null);
+      continue;
+    }
+
+    for (const sub of listSubDirs(top.path, !!topFm)) {
+      const subFm = parseSkillFrontmatter(sub.path);
+      const subDescendants = collectDescendantSkills(sub.path);
+
+      if (subFm && subFm.name === sub.name && subDescendants.length > 0) {
+        addCollection(sub.name, top.name, { name: subFm.name, description: subFm.description || '' }, subDescendants);
+        continue;
+      }
+
+      if (!subFm && subDescendants.length > 0) {
+        addCollection(sub.name, top.name, null, subDescendants);
+        continue;
+      }
+
+      if (subFm && subDescendants.length === 0) {
+        addStandalone(sub.name, subFm.name || sub.name, subFm.description || '', top.name);
+      }
+    }
+  }
+
+  collections.sort((a, b) => a.id.localeCompare(b.id));
+  standalones.sort((a, b) => a.name.localeCompare(b.name));
+  return { collections, standalones };
+}
+
 function loadGlobalEnabled() {
   try {
     const data = JSON.parse(fs.readFileSync(GLOBAL_ENABLED_FILE, 'utf-8'));
@@ -144,6 +276,51 @@ function readProfileFile(agentId, fileName) {
   return readText(fullPath);
 }
 
+function findGlobalSkillDir(skillId) {
+  const roots = [
+    path.join(HERMES_HOME, 'skills'),
+    path.join(HERMES_SOURCE_DIR, 'skills'),
+  ];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    const direct = path.join(root, skillId);
+    if (fs.existsSync(direct)) return direct;
+    const recursive = findByFrontmatterName(root, skillId);
+    if (recursive) return recursive;
+  }
+  return null;
+}
+
+function findByFrontmatterName(rootDir, skillName) {
+  let result = null;
+  function walk(dir, depth) {
+    if (depth > 10) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return; }
+    const hasSkillMd = entries.some((e) => e.isFile() && e.name === 'SKILL.md');
+    if (hasSkillMd) {
+      const fm = parseSkillFrontmatter(dir);
+      if (fm && fm.name === skillName) {
+        result = dir;
+        return;
+      }
+    }
+    const subdirs = entries.filter((e) =>
+      e.isDirectory() &&
+      !e.name.startsWith('.') &&
+      !EXCLUDED_SKILL_DIRS.has(e.name) &&
+      !(hasSkillMd && SKILL_SUPPORT_DIRS.has(e.name))
+    );
+    for (const sub of subdirs) {
+      walk(path.join(dir, sub.name), depth + 1);
+      if (result) return;
+    }
+  }
+  walk(rootDir, 0);
+  return result;
+}
+
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin || ALLOWED_ORIGIN;
   res.setHeader('Access-Control-Allow-Origin', origin);
@@ -184,6 +361,11 @@ const server = http.createServer(async (req, res) => {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
     json(res, 200, { skills });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/skill-collections') {
+    json(res, 200, scanSkillCollections());
     return;
   }
 
@@ -280,11 +462,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const skillId = parts[2];
-      let globalSkillDir = path.join(HERMES_HOME, 'skills', skillId);
-      if (!fs.existsSync(globalSkillDir)) {
-        globalSkillDir = path.join(HERMES_SOURCE_DIR, 'skills', skillId);
+      if (!/^[a-zA-Z0-9._-]+$/.test(skillId)) {
+        json(res, 400, { error: 'Invalid skill id' });
+        return;
       }
-      if (!fs.existsSync(globalSkillDir)) {
+      const globalSkillDir = findGlobalSkillDir(skillId);
+      if (!globalSkillDir) {
         json(res, 404, { error: 'Global skill not found' });
         return;
       }
