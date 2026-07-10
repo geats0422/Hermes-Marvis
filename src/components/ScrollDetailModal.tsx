@@ -46,7 +46,7 @@ export default function ScrollDetailModal({ agent, isOpen, onClose, memories }: 
   const realTimeStatus = statuses.find((s) => s.id === agent?.id)?.status || agent?.status || 'online';
 
   const chatCtx = agent ? { agentId: agent.id, agentName: agent.name, isMainAgent: agent.department === '首辅' } : null;
-  const { messages, send, loading: chatLoading } = useChat(chatCtx || { agentId: '', agentName: '', isMainAgent: true });
+  const { messages, send, stop, loading: chatLoading } = useChat(chatCtx || { agentId: '', agentName: '', isMainAgent: true });
 
   const {
     attachments, fileError, isDragOver, fileInputRef,
@@ -106,6 +106,10 @@ export default function ScrollDetailModal({ agent, isOpen, onClose, memories }: 
     if (isOpen) window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) stop();
+  }, [isOpen, stop]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === overlayRef.current) onClose();

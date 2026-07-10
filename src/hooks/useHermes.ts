@@ -77,6 +77,12 @@ export function useChat(ctx: AgentChatContext) {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    streamingRef.current = false;
+    setLoading(false);
     setMessages([]);
     if (ctx.sessionId) {
       setSessionId(ctx.sessionId);
